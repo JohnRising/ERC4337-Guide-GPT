@@ -1,0 +1,2644 @@
+Q: What is account abstraction?
+A: Account Abstraction is a blockchain technology that allows users to use smart contracts as their accounts.
+
+The default account for most users is just a private key. On most blockchain networks, only a private key can trigger transactions so this is the default account model for most users.
+
+Unfortunately private keys require users to know a lot about how a blockchain works to use them. We can create much better user experiences using smart accounts - accounts that have code attached.
+
+Account abstraction enables you to:
+
+- **💱 Pay gas fees:** Allow users to pay transaction fees in ERC-20 tokens or build your own fee logic, including sponsoring transaction fees on your app.
+- **🔑 Decide how to authorize transactions:** You aren't restricted to just a private key with smart accounts. You can add features like social logins, multi-sign, and more.
+- **⚛️ Freedom to build:** Design your application without being locked into private keys, or even a single service provider.
+
+Please see https://docs.stackup.sh/docs/account-abstraction for more details.
+
+Q: What is ERC-4337?
+A: The leading way to enable account abstraction is ERC-4337. This standard allows you to build applications with account abstraction under a unified framework, and does not require any core Ethereum protocol changes. The main parts of ERC-4337 are:
+
+- **User Operations**, an object that contains the transaction data
+- **Bundlers **, servers that send User Operations on-chain
+- **Paymasters** that can customize gas fees for User Operations
+- **Entry Point**, a contract that handles the execution and validation of User Operations
+
+Please see https://docs.stackup.sh/docs/erc-4337-overview for more details.
+
+Q: What is Stackup?
+A: Stackup is building the infrastructure needed to transition the world to blockchains.
+
+Our focus is on ERC-4337, the most promising advancement in account abstraction since the creation of Ethereum.
+
+Stackup's bundlers and paymasters have been in production since 2022, and power some of the leading account abstraction projects.
+
+Q: What are the main components of ERC-4337?
+A: There are four main components to ERC-4337: a User Operation, Bundler, EntryPoint, and Smart Account (aka Contract Account). These can be supplemented by Paymasters and Aggregators.
+
+- _UserOperations_ are pseudo-transaction objects that are used to execute transactions with contract accounts. These are created by your app.
+- _Bundlers_ are actors that package UserOperations from a mempool and send them to the EntryPoint contract on the blockchain.
+- _EntryPoint_ is a singleton smart contract that handles the verification and execution logic for transactions.
+- _Contract Accounts_ are smart contract accounts owned by a user.
+- _Paymasters_ are optional smart contract accounts that can sponsor transactions for Contract Accounts.
+- _Aggregators_ are optional smart contracts that can validate signatures for multiple Contract Accounts.
+
+Please see 
+
+Q: What are user operations?
+A: All components of ERC-4337 revolve around a pseudo-transaction object called a UserOperation which is used to execute actions through a smart contract account. It captures the intent of what the user wants to do. This isn't to be mistaken for a regular transaction type.
+
+| Field                  | Type      | Description                                                                                                                                                                         |
+| :--------------------- | :-------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sender`               | `address` | The address of the smart account sending the User Operation.                                                                                                           |
+| `nonce`                | `uint256` | Anti-replay protection.                                                                                                                                                             |
+| `initCode`             | `bytes`   | Code used to deploy the sender if not yet on-chain.                                                                                                                    |
+| `callData`             | `bytes`   | Data that's passed to the sender for execution.                                                                                                                        |
+| `callGasLimit`         | `uint256` | Gas limit for the execution phase.                                                                                                                                                  |
+| `verificationGasLimit` | `uint256` | Gas limit for the verification phase.                                                                                                                                               |
+| `preVerificationGas`   | `uint256` | Gas to compensate the bundler for the overhead to submit the User Operation.                                                                                           |
+| `maxFeePerGas`         | `uint256` | Similar to EIP-1559 maxFeePerGas                                                                                                                                       |
+| `maxPriorityFeePerGas` | `uint256` | Similar to EIP-1559 maxPriorityFeePerGas.                                                                                                                              |
+| `paymasterAndData`     | `bytes`   | Paymaster contract address and any extra data the paymaster contract needs for verification and execution. When set to `0x` or the zero address, no paymaster is used. |
+| `signature`            | `bytes`   | Used to validate a User Operation during verification.                                                                                                                 |
+
+You will see reference to two phases of ERC-4337: verification and execution. Verification is checking the validity of User Operations, and execution is the actual execution of those transactions.
+
+Please see https://docs.stackup.sh/docs/erc-4337-overview for more details.
+
+Q: What are bundlers?
+A: A Bundler is a class of actors that sends User Operations to the EntryPoint. Specifically, it:
+
+- Listens to at least one UserOperation mempool.
+- Runs simulations.
+- Bundles an array of User Operations.
+- Relays bundles to the EntryPoint.
+
+Mempools for User Operation are separate from the regular blockchain transaction mempool.
+
+Q: What is the EntryPoint?
+The EntryPoint is a singleton contract that acts as a central entity for all ERC-4337 Smart Accounts and Paymasters. It coordinates the verification and execution of a User Operation. For this reason, it's important for all implementations of an EntryPoint to be audited and immutable.
+
+The EntryPoint handles a batch of UserOperations sent by the Bundler in two phases:
+
+1. **Verification loop:** Verifies that each UserOperation is valid by checking it with both the Smart Account and the Paymaster contract.
+2. **Execution loop:** Sends the `callData` in each UserOperation to the Smart Account.
+
+The verification loop will also make sure that either the Smart Account or Paymaster contract can pay the maximum gas cost for each User Operation. 
+
+Bundlers only check the verification phase. Bundlers do not check if the `callData` will fully execute.
+
+Please see https://docs.stackup.sh/docs/erc-4337-overview for more details.
+
+Q: What is a smart account?
+A: The Smart Account is an end user's account. At minimum it needs to check whether or not it will accept a User Operation during the verification loop.
+
+Additional features to support other account functions like social recovery and multi-operations can be added here too.
+
+Q: What is a paymaster?
+A: The Paymaster is an entity that is able to sponsor the gas fees of a UserOperation. It is required to do two things:
+
+1. Check whether or not it will accept a User Operation during the verification loop.
+2. Run any required fee logic in the execution loop.
+
+An example of Paymaster logic could be to withdraw a certain amount of ERC-20 tokens from the Smart Account after the UserOperation is executed. This allows users to pay for gas in any currency they choose.
+
+Q: What is an aggregator?
+A: The Aggregator is an entity that is trusted by Contract Accounts to validate signatures. They are often used to aggregate signatures from multiple UserOperations together.
+
+Q: How do I use a paymaster to sponsor transactions or use ERC-20 tokens to pay for gas?
+A: To use a verifying paymaster, you need to include `paymasterAndData` in your user operation. You can use a library like userop.js or account-abstraction/sdk to do this for you.
+
+# Userop.js
+```
+const paymasterContext = { type: "payg" };
+const paymasterMiddleware = Presets.Middleware.verifyingPaymaster(
+  paymasterUrl,
+  paymasterContext
+);
+const opts = paymasterUrl === "" ? {} : {
+  paymasterMiddleware: paymasterMiddleware,
+}
+```
+
+# Account-abstraction/sdk
+```
+// Extend the Ethereum Foundation's account-abstraction/sdk's basic paymaster
+class VerifyingPaymasterAPI extends PaymasterAPI {
+  private paymasterUrl: string;
+  private entryPoint: string;
+  constructor(paymasterUrl: string, entryPoint: string) {
+    super();
+    this.paymasterUrl = paymasterUrl;
+    this.entryPoint = entryPoint;
+  }
+
+  async getPaymasterAndData(
+    userOp: Partial<UserOperationStruct>
+  ): Promise<string> {
+    // Hack: userOp includes empty paymasterAndData which calcPreVerificationGas requires.
+    try {
+      // userOp.preVerificationGas contains a promise that will resolve to an error.
+      await ethers.utils.resolveProperties(userOp);
+      // eslint-disable-next-line no-empty
+    } catch (_) {}
+    const pmOp: Partial<UserOperationStruct> = {
+      sender: userOp.sender,
+      nonce: userOp.nonce,
+      initCode: userOp.initCode,
+      callData: userOp.callData,
+      callGasLimit: userOp.callGasLimit,
+      verificationGasLimit: userOp.verificationGasLimit,
+      maxFeePerGas: userOp.maxFeePerGas,
+      maxPriorityFeePerGas: userOp.maxPriorityFeePerGas,
+      // A dummy value here is required in order to calculate a correct preVerificationGas value.
+      paymasterAndData:"0x0101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000001010101010100000000000000000000000000000000000000000000000000000000000000000101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101",
+      signature: ethers.utils.hexlify(Buffer.alloc(65, 1)),
+    };
+    const op = await ethers.utils.resolveProperties(pmOp);
+    op.preVerificationGas = calcPreVerificationGas(op);
+    op.verificationGasLimit = ethers.BigNumber.from(op.verificationGasLimit).mul(3);
+
+    // Ask the paymaster to sign the transaction and return a valid paymasterAndData value.
+    const params = [await OptoJSON(op), this.entryPoint, {"type": "payg"}];
+    const provider = new ethers.providers.JsonRpcProvider(paymasterUrl);
+    const response = await provider.send("pm_sponsorUserOperation", params);
+
+    return response.data.result.toString();
+  }
+}
+
+async function OptoJSON(op: Partial<UserOperationStruct>): Promise<any> {
+    const userOp = await ethers.utils.resolveProperties(op);
+    return Object.keys(userOp)
+        .map((key) => {
+            let val = (userOp as any)[key];
+            if (typeof val !== "string" || !val.startsWith("0x")) {
+                val = ethers.utils.hexValue(val);
+            }
+            return [key, val];
+        })
+        .reduce(
+            (set, [k, v]) => ({
+                ...set,
+                [k]: v,
+            }),
+            {}
+        );
+}
+```
+"
+
+Q: How do I create a user operation?
+A: User operations are pseudo-transaction objects in ERC-4337. To build a user operation, you will need to specify all parameters in a user operation. You can use a library like userop.js or account-abstraction/sdk to do this. Here is a code snippet that creates a user operation that sends an ERC-20 token:
+
+```
+// Welcome to the ERC-4337 tutorial #1!
+// This tutorial walks you though a simple ERC-4337 transaction: sending a User Operation
+// with gas paid by a Paymaster.
+//
+// You can view more information about this tutorial at
+// https://docs.stackup.sh/docs/get-started-with-stackup
+//
+// Enter `npm run dev` into your terminal to run.
+
+// This example uses the userop.js library to build the transaction, but you can use any
+// library.
+
+import { ethers } from "ethers";
+import { Presets, Client } from "userop";
+
+const rpcUrl ="https://public.stackup.sh/api/v1/node/ethereum-sepolia";
+const paymasterUrl = ""; // Optional - you can get one at https://app.stackup.sh/
+
+async function main() {
+  const paymasterContext = { type: "payg" };
+  const paymasterMiddleware = Presets.Middleware.verifyingPaymaster(
+    paymasterUrl,
+    paymasterContext
+  );
+  const opts = paymasterUrl.toString() === "" ? {} : {
+    paymasterMiddleware: paymasterMiddleware,
+  }
+
+  // Initialize the account
+  const signingKey = "0x4337433743374337433743374337433743374337433743374337433743374337";
+  const signer = new ethers.Wallet(signingKey);
+  var builder = await Presets.Builder.SimpleAccount.init(signer, rpcUrl, opts);
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`);
+
+  // Create the call data
+  const to = address; // Receiving address, in this case we will send it to ourselves
+  const token = "0x3870419Ba2BBf0127060bCB37f69A1b1C090992B"; // Address of the ERC-20 token
+  const value = "0"; // Amount of the ERC-20 token to transfer
+
+  // Read the ERC-20 token contract
+  const ERC20_ABI = require("./erc20Abi.json"); // ERC-20 ABI in json format
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+  const erc20 = new ethers.Contract(token, ERC20_ABI, provider);
+  const decimals = await Promise.all([erc20.decimals()]);
+  const amount = ethers.utils.parseUnits(value, decimals);
+
+  // Encode the calls
+  const callTo = [token, token];
+  const callData = [erc20.interface.encodeFunctionData("approve", [to, amount]),
+                    erc20.interface.encodeFunctionData("transfer", [to, amount])]
+
+  // Send the User Operation to the ERC-4337 mempool
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.executeBatch(callTo, callData), {
+    onBuild: (op) => console.log("Signed UserOperation:", op),
+  });
+
+  // Return receipt
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log("Waiting for transaction...");
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+  console.log(`View here: https://jiffyscan.xyz/userOpHash/${res.userOpHash}`);
+
+}
+
+main().catch((err) => console.error("Error:", err));
+```
+
+Q: Show me a code example for creating an ERC-4337 account.
+A: ERC-4337 smart accounts are automatically deployed from the `initCode` in the first user operation sent by the account. If you wish to create a transaction that only deploys the account, you can send a transaction with no `callData`.
+
+```
+import { ethers } from 'ethers';
+import { Presets, Client } from 'userop';
+
+const rpcUrl = 'https://public.stackup.sh/api/v1/node/ethereum-sepolia';
+const paymasterUrl = ''; // Optional - you can get one at https://app.stackup.sh/
+
+async function main() {
+  const paymasterContext = { type: 'payg' };
+  const paymasterMiddleware = Presets.Middleware.verifyingPaymaster(
+    paymasterUrl,
+    paymasterContext
+  );
+  const opts =
+    paymasterUrl.toString() === ''
+      ? {}
+      : {
+          paymasterMiddleware: paymasterMiddleware,
+        };
+
+  // Initialize the account
+  const signingKey =
+    '0x4337433743374337433743374337433743374337433743374337433743374337';
+  const signer = new ethers.Wallet(signingKey);
+  var builder = await Presets.Builder.SimpleAccount.init(signer, rpcUrl, opts);
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`);
+
+  // Send the User Operation to the ERC-4337 mempool
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.setCallData('0x'), {
+    onBuild: (op) => console.log('Signed UserOperation:', op),
+  });
+
+  // Return receipt
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log('Waiting for transaction...');
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+  console.log(`View here: https://jiffyscan.xyz/userOpHash/${res.userOpHash}`);
+}
+
+main().catch((err) => console.error('Error:', err));
+
+```
+
+Q: How do I create a user operation?
+A: User operations are pseudo-transaction objects in ERC-4337. To build a user operation, you will need to specify all parameters in a user operation. You can use a library like userop.js or account-abstraction/sdk to do this. Here is a code snippet that creates a user operation that sends an ERC-20 token:
+
+```
+// Welcome to the ERC-4337 tutorial #1!
+// This tutorial walks you though a simple ERC-4337 transaction: sending a User Operation
+// with gas paid by a Paymaster.
+//
+// You can view more information about this tutorial at
+// https://docs.stackup.sh/docs/get-started-with-stackup
+//
+// Enter `npm run dev` into your terminal to run.
+
+// This example uses the userop.js library to build the transaction, but you can use any
+// library.
+
+import { ethers } from "ethers";
+import { Presets, Client } from "userop";
+
+const rpcUrl ="https://public.stackup.sh/api/v1/node/ethereum-sepolia";
+const paymasterUrl = ""; // Optional - you can get one at https://app.stackup.sh/
+
+async function main() {
+  const paymasterContext = { type: "payg" };
+  const paymasterMiddleware = Presets.Middleware.verifyingPaymaster(
+    paymasterUrl,
+    paymasterContext
+  );
+  const opts = paymasterUrl.toString() === "" ? {} : {
+    paymasterMiddleware: paymasterMiddleware,
+  }
+
+  // Initialize the account
+  const signingKey = "0x4337433743374337433743374337433743374337433743374337433743374337";
+  const signer = new ethers.Wallet(signingKey);
+  var builder = await Presets.Builder.SimpleAccount.init(signer, rpcUrl, opts);
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`);
+
+  // Create the call data
+  const callTo = [];
+  const callData = [];
+
+  // Send the User Operation to the ERC-4337 mempool
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.executeBatch(callTo, callData), {
+    onBuild: (op) => console.log("Signed UserOperation:", op),
+  });
+
+  // Return receipt
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log("Waiting for transaction...");
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+  console.log(`View here: https://jiffyscan.xyz/userOpHash/${res.userOpHash}`);
+
+}
+
+main().catch((err) => console.error("Error:", err));
+```
+
+Q: How do I get the hash of a user operation?
+A: The userOpHash is a keccak256 hash of:
+
+1. The entire User Operation (minus the signature field).
+2. The EntryPoint address.
+3. The chain ID.
+All signatures should be a signed message of the userOpHash. To optimize gas, the EntryPoint will generate this hash once and pass it to both validateUserOp and validatePaymasterUserOp during the verification phase.
+
+# Ethers.js
+```
+const packedData = ethers.utils.defaultAbiCoder.encode(
+  [
+    "address",
+    "uint256",
+    "bytes32",
+    "bytes32",
+    "uint256",
+    "uint256",
+    "uint256",
+    "uint256",
+    "uint256",
+    "bytes32",
+  ],
+  [
+    sender,
+    nonce,
+    ethers.utils.keccak256(initCode),
+    ethers.utils.keccak256(callData),
+    callGasLimit,
+    verificationGasLimit,
+    preVerificationGas,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+    ethers.utils.keccak256(paymasterAndData),
+  ]
+);
+
+const enc = ethers.utils.defaultAbiCoder.encode(
+  ["bytes32", "address", "uint256"],
+  [ethers.utils.keccak256(packedData), entryPoint, chainId]
+);
+
+const userOpHash = ethers.utils.keccak256(enc);
+```
+
+Q: How do I sign a user operation?
+A: ERC-4337 allows the signature field of a user operation to be any data, so generating the signature of a user operation will be dependent on your smart account.
+
+However, most of the time smart accounts will simply sign over the user operation hash. If an ethers.js Signer object is used, you can simply use the signMessage function.
+
+# Ethers.js
+```
+const signature = signer.signMessage(
+  ethers.utils.arrayify(userOpHash)
+);
+```
+The userOpHash is the hash of the user operation. Learn how to get the userOpHash.
+
+Signing Paymasters
+Many types of paymasters, including Stackup's paymasters, need to sign a user operation and include the signature in the user operation's paymasterAndData.
+
+Even though the user operation is not signed by the user yet, the paymaster still needs to make an estimate of how much gas the user operation will take. To do this, a dummy signature will need to be included in the gas estimate.
+
+If you are using a userop.js preset, this logic is already handled for you. You can see an example of a dummy signature in the userop.js code.
+
+Checking the smart account's signature method
+If your application does not already know what smart account is being used by the user, you will need to check the signature logic on-chain.
+
+Q: How do I create the callData for a user operation?
+A: A UserOperation has a field called callData. This is sent to the sender Smart Account during the execution phase in order to carry out the user's desired intent.
+
+# Ethers.js
+```
+// Get account and contract ABIs
+const accountABI = ["function execute(address to, uint256 value, bytes data)"];
+const contractABI = ["function transfer(address to, uint amount) returns (bool)"];
+
+// Create ethers contract interface
+const account = new ethers.utils.Interface(accountABI);
+const contract = new ethers.utils.Interface(contractABI);
+
+// 
+const callData = account.encodeFunctionData("execute", [
+  "0x...",
+  ethers.constants.Zero,
+  contract.encodeFunctionData("transfer", [accountAddress, amount]),
+]);
+```
+
+Q: How do I check the signature of an ERC-4337 smart account?
+A: The best practice is to use ERC-6492 to verify the signature smart account, even if it is not yet deployed. This can be done either on-chain or off-chain.
+
+For convenience, the logic for ERC-6492 can be called from a smart contract called UniversalSigValidator. You can check this off-chain using its bytecode like in the example below, or even check in on-chain by calling the contract's isValidSig function.
+
+# Ethers.js
+```
+// Off-chain signature validation using ethers.js
+// Replace `ethers.verifyMessage(message, signature) === signer` with this:
+
+// Bytecode of the UniversalSigValidator's isValidSig function for verifying off-chain
+const validateSigOffchainBytecode= "0x6080..."; // Paste the contract bytecode from https://github.com/AmbireTech/signature-validator/blob/dabe1d3a8adac2cf6df0b41d825f8b7b8dae2d34/dist/index.js#L45
+
+const isValidSignature = '0x01' === await provider.call({
+  data: ethers.utils.concat([
+    validateSigOffchainBytecode,
+    (new ethers.utils.AbiCoder()).encode(['address', 'bytes32', 'bytes'], [signer, hash, signature])
+  ])
+})
+```
+
+# signature-validator
+```
+// Off-chain signature validation using @ambire/signature-validator npm library
+// Replace `ethers.verifyMessage(message, signature) === signer` with this:
+
+import ethers from 'ethers';
+import { verifyMessage } from '@ambire/signature-validator';
+
+const provider = new ethers.providers.JsonRpcProvider('https://polygon-rpc.com')
+
+async function run() {
+	// Replace `ethers.verifyMessage(message, signature) === signer` with this:
+	const isValidSig = await verifyMessage({
+	    signer: '0xaC39b311DCEb2A4b2f5d8461c1cdaF756F4F7Ae9',
+	    message: 'My funds are SAFU with Ambire Wallet',
+	    signature: '0x9863d84f3119ac01d9e3bf9294e6c0c3572a07780fc7c49e8dc913806f4b1dbd4cc075462dc84422a9b981b2556f9c9197d76da7ba3603e53e9300869c574d821c',
+	    provider,
+	})
+	console.log('is the sig valid: ', isValidSig)
+}
+run().catch(e => console.error(e))
+```
+
+# Solidity
+```
+// On-chain verification of a signature using the ERC-6492 UniversalSigValidator contract.
+
+UniversalSigValidator.isValidSig(_signer, _hash, _signature);
+```
+
+
+ERC-1271 and ERC-6492
+Validating smart contract signatures is historically done using ERC-1271.
+
+ERC-1271 defines an interface, isValidSignature, which can be called by an application to validate a signature. In this method an app checks if the user's address has code deployed, and if so, calls isValidSignature.
+
+One limitation of ERC-1271 is that this method requires the smart account contract to already be deployed on chain. The best user experience is often for smart accounts to defer contract deployment until the first user action.
+
+ERC-6492 extends ERC-1271 to allow any contract or off-chain actor to verify a signature on behalf of a contract that is not deployed. This can be done because ERC-4337 accounts are counterfactual.
+
+We recommend using ERC-6492.
+
+Q: What is ERC-1271?
+ERC-1271 defines an interface, isValidSignature, which can be called by an application to validate a signature. In this method an app checks if the user's address has code deployed, and if so, calls isValidSignature.
+
+One limitation of ERC-1271 is that this method requires the smart account contract to already be deployed on chain. The best user experience is often for smart accounts to defer contract deployment until the first user action.
+
+ERC-6492 extends ERC-1271 to allow any contract or off-chain actor to verify a signature on behalf of a contract that is not deployed. This can be done because ERC-4337 accounts are counterfactual.
+
+We recommend using ERC-6492.
+
+Q: How do I get the address of a smart account?
+A: The CREATE2 opcode is used to create deterministic smart account addresses. A contract address is determined by a fromAddress, salt, and initCodeHash.
+
+# ethers.js
+```
+const accountAddress = ethers.utils.getCreate2Address(
+  fromAddress,
+  salt,
+  initCodeHash
+);
+
+```
+fromAddress
+The fromAddress is the address of the Singleton Factory. This factory receives the salt and initCode as input and uses CREATE2 to deploy the contract on-chain.
+
+Because the factory address is the same on every chain, we can rely on it to also deploy our smart contract code on all networks under the same address too.
+
+salt
+For an ERC-4337 account, the salt parameter is the first nonce value. This is 0.
+
+initCodeHash
+The initCode, which is also a field on the UserOperation, is the smart contract code and arguments used for initializing it. It is hashed using keccak256 to derive the initCodeHash.
+
+Q: How do I check if a smart account exists?
+A: Every smart contract address has a code attached to it that implements the logic. Anyone can retrieve this code by calling the eth_getCode RPC method.
+
+An ERC-4337 smart contract account is no different. Before the account can do common things, like validate a signature, its code must be deployed otherwise the EVM will not know how to handle the request. A quick way to check if a smart contract account is deployed is to verify if the code field is null or not.
+
+# Ethers.js
+```
+const code = await provider.getCode(accountAddress);
+const isDeployed = code !== "0x";
+```
+
+Q: How do I create the initCode?
+A: The initCode is the field of a User Operation that tells the EntryPoint how to deploy an account if one does not already exist at the sender address.
+
+Most of the time, the initCode will simply be:
+
+initCode = hexConcat([factoryAddress, createAccountData]).
+
+Where the factoryAddress is the address of the factory that creates the account. Read about the best practices for creating smart accounts.
+
+If you are using a library like userop.js, you will often not need to create the initCode directly.
+
+# Ethers.js
+```
+const factoryAddress = "0x...";
+const factoryInterface = new ethers.Contract(factoryAddress, abi, provider);
+const signer = new ethers.Signer;
+const salt = 0;
+
+initCode = await ethers.utils.hexConcat([
+  factoryAddress,
+  factoryInterface.encodeFunctionData("createAccount", [
+    await signer.getAddress(),
+    salt,
+  ]),
+]);
+```
+
+Q: What is ERC-6900?
+A: ERC-6900 introduces a standardized framework for modular smart accounts and plugins within the Ethereum ecosystem.
+
+The proposal aims to enhance the flexibility and composability of smart contract accounts by allowing developers to separate different functionalities into distinct modules that can be upgraded and interacted with independently. ERC-6900 accounts must follow ERC-4337.
+
+We recommend all smart accounts follow this standard.
+
+There are three types of plugins:
+
+Validation functions are functions that validate authentication and authorization of a caller to an account.
+Execution functions execute any custom logic allowed by the account.
+Hooks are smart contract functions executed before or after another function, and can modify the state or cause a call to revert.
+Plugins are required to have standard function signatures to be compatible with ERC-6900 accounts.
+
+Interfaces
+Accounts are required to implement the below standard interfaces:
+
+IAccount from ERC-4337, which creates the validateUserOp function called by the EntryPoint
+IStandardExecutor from ERC-6900, which defines execute and executeBatchfunctions for executing callData
+Plugins may include the below interfaces.
+
+IPluginUpdate to allow plugins to be modified
+IPluginLoupe to allow plugin information to be inspected on chain
+
+Q: Why am I receiving an "Invalid UserOp signature or paymaster signature" error even though I verified the signature is valid?
+A: If you encounter the "Invalid UserOp signature or paymaster signature" error, it typically indicates that either the UserOp signature or the paymasterAndData) is not valid. Here are some steps to troubleshoot the issue:
+
+Ensure that you are using the correct private key or secret to sign the User Operation. Double-check that the key or authentication method you are using matches the one associated with the account you intend to sign for.
+Verify that only the final User Operation is signed by the user. In some cases, middleware functions like userop.js may modify the user operation after receiving the signature, leading to signature validation errors. Middleware functions in userop.js are executed in order when the user operation is built, and mis-ordering of middleware functions (especially when using presets) may be the issue. Make sure that no unintended modifications are occurring.
+Review your RPC request and ensure that all the required parameters are included and properly formatted. Check for any missing or incorrect data that may cause the signature validation to fail.
+
+Q: How can I enable social login with ERC-4337?
+A: While ERC-4337 allows a smart contract to define its approval logic, by itself it does not enable social login. To enable social login, you can consider the following options:
+
+Utilize an MPC (Multi-Party Computation) service such as Web3Auth, Particle Network, Magic.link, or Lit Protocol to link a user's social identity to a cryptographic key. This key can then be set as the owner of the Smart Account.
+Create an OAuth signing service that facilitates account recovery for users who may have lost their device key. You can explore Stackup's research on this topic by visiting this blog post: The Future of Ethereum Access: OAuth and Account Abstraction
+
+
+Q: How do I enable session keys with ERC-4337?
+A: ERC-4337 empowers a Smart Account to establish its own approval logic. To enable session keys, it is recommended to use a contract implementation that natively supports session keys, such as Kernel.
+
+Q: Why did my user operation fail to execute even though I received a successful response from eth_sendUserOperation?
+A: The eth_sendUserOperation method in ERC-4337 performs a validation process that ensures the User Operation meets certain conditions. However, passing the validation does not guarantee the execution of the User Operation. The validation process primarily checks factors like gas availability, nonce correctness, and other security measures. If a User Operation fails any of these validation checks, it will be filtered out and not executed, even if the initial response indicates success.
+
+Q: My user operation made it on-chain, but it didn't execute. What could have happened?
+A: If your User Operation successfully reached the blockchain but did not execute as expected, it is possible that the issue lies beyond the initial verification process. Bundlers and the EntryPoint perform checks to ensure that user operations pass verification with the Smart Account, but they do not guarantee the successful completion of the included callData. In such cases, although the user operation is recorded on the chain, the remaining actions specified within the callData may encounter errors or conditions that prevent their execution.
+
+Q: Can I sponsor EOA (Externally Owned Account) transactions using a Paymaster?
+A: No, ERC-4337 paymasters can only sponsor transactions for Smart Accounts. Externally Owned Accounts (EOAs) are not supported for sponsorship with paymasters.
+
+Q: Is it possible to make the signature for a user operation valid only within a specified time frame?
+A: Yes, it is possible to specify a valid time range for the signature field of a User Operation. By signing over the time range, you can restrict the validity of the signature and mitigate replay attacks. Your Smart Account contract needs to include logic to verify the time range during its validation process.
+
+Q: Can I use Stackup's bundler with my own node?
+A: Yes, it is possible to use Stackup's bundler with your own node. However, your node must have custom JS tracing enabled, which is typically not available by default on most node service providers. Therefore, you will likely need to run your own node with the required configuration.
+
+Q: Why are some of my user operations being rejected or taking a long time to be included?
+A: The gas settings for your User Operation are likely too low. If you are using userop.js, we recommend using the gas price middleware or a gas price oracle. This can especially be a problem on public testnets when gas prices spike.
+
+Q: Can I use a non-Stackup paymaster with Stackup's bundler?
+A: Yes, Stackup's bundler is compatible with non-Stackup paymasters. As long as the user operation is valid and adheres to the required specifications, it can be processed by Stackup's bundler regardless of the paymaster used.
+
+Q: How do bundlers and Stackup protect against MEV (Miner Extractable Value)?
+A: Bundlers can leverage services like Flashbots to protect against Miner Extractable Value (MEV). Some bundlers may even be block builders themselves. Regardless, even if a bundler faces front-running and the bundler's transaction is replaced, the User Operation will still be processed on-chain, ensuring the integrity of the intended action.
+
+Q: Can I implement custom logic for sponsoring transactions with paymasters?
+A: Yes, it is possible to implement custom logic for sponsoring transactions with Paymasters. To do so, you need to create an API key with paymaster enabled. On the server side, implement your desired custom logic to determine whether a user operation should be sponsored. If the user operation meets the specified criteria, call Stackup's paymaster with your API key to sign the user operation. Ensure that the API key remains confidential and protected.
+
+Q: Can I add my own fee on top of Stackup's ERC-20 paymaster?
+A: Yes. Please contact Stackup to enable this on your account.
+
+
+Q: Why use ERC-4337 smart accounts instead of ERC-2771 metatransactions?
+A: ERC-2771 is a precursor to ERC-4337 that provided a standard for smart contracts to parse metatransactions on Ethereum.
+
+Metatransactions are transactions that allow a relayer to pay for gas fees on behalf of a smart contract wallet. In order to do that, smart contracts needed a way to differentiate between the data from the relayer and the data from the sender. ERC-2771 is the standard for this.
+
+ERC-4337 provides many more features for gas abstraction, and many ERC-2771 relayers are migrating to ERC-4337 bundlers. In fact, many of the authors of ERC-2771 and developers of relay services like Gas Station Network went on to propose ERC-4337.
+
+
+Q:Are there any public bundler endpoints?
+A: Yes, Stackup offers public bundler and node endpoints.
+
+Network	Public RPC URL
+Ethereum	https://public.stackup.sh/api/v1/node/ethereum-mainnet
+Ethereum Goerli	https://public.stackup.sh/api/v1/node/ethereum-goerli
+Ethereum Sepolia	https://public.stackup.sh/api/v1/node/ethereum-sepolia
+Polygon Mainnet	https://public.stackup.sh/api/v1/node/polygon-mainnet
+Polygon Mumbai	https://public.stackup.sh/api/v1/node/polygon-mumbai
+Avalanche-C	https://public.stackup.sh/api/v1/node/avalanche-mainnet
+Avalanche-C Fuji	https://public.stackup.sh/api/v1/node/avalanche-fuji
+Optimism	https://public.stackup.sh/api/v1/node/optimism-mainnet
+Optimism Goerli	https://public.stackup.sh/api/v1/node/optimism-goerli
+Optimism Sepolia	https://public.stackup.sh/api/v1/node/optimism-sepolia
+BnB Smart Chain	https://public.stackup.sh/api/v1/node/bsc-mainnet
+BnB Smart Chain Testnet	https://public.stackup.sh/api/v1/node/bsc-testnet
+Arbitrum One	https://public.stackup.sh/api/v1/node/arbitrum-one
+Arbitrum One Goerli	https://public.stackup.sh/api/v1/node/arbitrum-goerli
+Arbitrum One Sepolia	https://public.stackup.sh/api/v1/node/arbitrum-sepolia
+Base	https://mainnet.base.org
+Base Goerli	https://public.stackup.sh/api/v1/node/base-goerli
+Base Sepolia	https://public.stackup.sh/api/v1/node/base-sepolia
+
+
+Q: What bundler RPC methods are there?
+A: eth_sendUserOperation - send a user operation
+eth_estimateUserOperationGas - estimate the gas required for a user operation
+eth_getUserOperationByHash - fetch the user operation receipt and corresponding bundler transaction data
+eth_getUserOperationReceipt - fetch the user operation receipt
+eth_supportedEntryPoints - returns the EntryPoints supported by the bundler
+
+Q: -32500 Transaction Rejected
+A: The -32500 error code is returned when the user operation is rejected when the EntryPoint is validating the user operation or creating the account. If you receive this error, check the initCode (if creating an account) and the signature in the user operation.
+
+Accompanying codes from the EntryPoint
+The -32500 error code may be accompanied by an additional AAxx code provided by the EntryPoint to give additional guidance.
+
+
+Q: -32501 Rejected by Paymaster
+A: The -32501 error code is returned when the user operation is rejected by the Paymaster.
+
+Before submitting user operations to the blockchain, bundlers make sure that any paymasters that are used will pay them back.
+
+If you receive this error, check the paymasterAndData field of the user operation.
+
+Q: -32502 Opcode Violation
+A: The -32502 error code indicates that a user operation was rejected because the sender does a forbidden operation when verifying the signature.
+
+Before submitting user operations to the blockchain, bundlers must make sure user operations don't grief the bundler. One way user operations can grief a bundler is by accessing certain opcodes when checking a signature.
+
+All ERC-4337 bundlers are required to follow these opcode rules, though some can create alternative user operation mempools that relax these rules.
+
+If you receive this error, you may need to modify the smart contracts you are using for your account.
+
+Q: -32503 UserOperation out of time-range
+A: This error code means that either the account or the paymaster returned a time-range, and it is already expired or will expire soon.
+
+Check the time range signed by the account or the paymaster.
+
+Q: -32504 Throttled or Banned
+A: This error code means that the user operation was rejected because the paymaster or aggregator is throttled or banned.
+
+To prevent attacks on the bundler network, bundlers can throttle or ban malicious entities that violate certain rules. If you encounter this error code unexpectedly, you need to identify why the bundler is banning or throttling this entity.
+
+User operation’s storage access rules prevent them from interfering with each other. But “global” entities - paymasters, factories, and aggregators are accessed by multiple user operation, and thus might invalidate multiple previously-valid user operations.
+
+To prevent abuse, ERC-4337 bundlers throttle down (or completely ban for a period of time) an entity that causes invalidation of large number of user operations in the mempool. To prevent such entities from "sybil-attack", bundlers require them to stake with the EntryPoint, and thus make such DoS attacks very expensive. Note that this stake is never slashed, and can be withdrawn any time (after unstake delay).
+
+Q: -32505 Stake or Delay Too Low
+A: This error code means that the paymaster or aggregator used by the user operation does not have sufficient stake with the EntryPoint.
+
+User operation’s storage access rules prevent them from interfering with each other. But “global” entities - paymasters, factories, and aggregators are accessed by multiple user operation, and thus might invalidate multiple previously-valid user operations.
+
+To prevent abuse, ERC-4337 bundlers throttle down (or completely ban for a period of time) an entity that causes invalidation of large number of user operations in the mempool. To prevent such entities from "sybil-attack", bundlers require them to stake with the EntryPoint, and thus make such DoS attacks very expensive. Note that this stake is never slashed, and can be withdrawn any time (after unstake delay).
+
+Q: -32506 Unsupported Aggregator
+A: This error code means that the aggregator used by the user operation is not supported.
+
+If you encounter this code, it is likely the aggregator is incorrectly specified in the user operation or is not a valid ERC-4337 aggregator.
+
+Q: -32507 Invalid Signature
+A: This error code means that the user operation contains an invalid signature from either the sender or the paymaster.
+
+This error code is returned when validateUserOp or validatePaymasterUserOp is checked by the bundler before submitting the user operation on-chain.
+
+Q: -32521: Transaction Reverted
+A: This code indicates that the transaction was reverted during the execution phase.
+
+This likely means that there is insufficient gas to pay for the execution or there is an error with the callData in your user operation. We recommend you simulate the user operation to identify the precise cause.
+
+Q: -32602 Invalid UserOperation
+A: This code indicates that the user operation sent to the bundler is invalid.
+
+Check that all fields of your user operation are correct. The fields in a user operation are:
+
+Field	Type	Description
+sender	address	The address of the smart account sending the User Operation.
+nonce	uint256	Anti-replay protection.
+initCode	bytes	Code used to deploy the sender if not yet on-chain.
+callData	bytes	Data that's passed to the sender for execution.
+callGasLimit	uint256	Gas limit for the execution phase.
+verificationGasLimit	uint256	Gas limit for the verification phase.
+preVerificationGas	uint256	Gas to compensate the bundler for the overhead to submit the User Operation.
+maxFeePerGas	uint256	Similar to EIP-1559 maxFeePerGas
+maxPriorityFeePerGas	uint256	Similar to EIP-1559 maxPriorityFeePerGas.
+paymasterAndData	bytes	Paymaster contract address and any extra data the paymaster contract needs for verification and execution. When set to 0x or the zero address, no paymaster is used.
+signature	bytes	Used to validate a User Operation during verification.
+
+Q: What are AA errors?
+A: The ERC-4337 EntryPoint returns some helpful errors that you may receive when sending user operations.
+
+Suggest Edits
+Bundler error codes often are accompanied by an additional AAxx code provided by the EntryPoint to give additional guidance.
+
+AA1x error codes relate to creating an account
+AA2x error codes relate to the sender of the user operation
+AA3x error codes relate to paymasters
+AA4x error codes relate to verification generally
+AA5x errors relate to actions after the user operation was executed
+
+Q: AA10 sender already constructed
+A: The sender was already created, so the initCode does not need to be run. This error may occur if you attempt to create an account multiple times.
+
+Q: AA13 initCode failed or OOG
+A: The initCode failed to create the account or ran out of gas. "OOG" is an abbreviation for Out-Of-Gas. Check the amount of gas consumed, and then verify the initCode or the factory contract is correct.
+
+Q: AA14 initCode must return sender
+A: The initCode does not return the sender address. Check the initCode or the factory contract.
+
+Q: AA15 initCode must create sender
+A: The initCode in the user operation does not create an account. Check the initCode or the factory contract.
+
+Q: AA20 Account Not Deployed
+A: The sender of the user operation is not deployed and there is no initCode specified. If this is the first transaction by this account make sure an initCode is included. Otherwise, check that the correct sender address is specified and is an ERC-4337 account.
+
+Q: AA21 Didn’t pay prefund
+A: The sender did not have enough to prefund the EntryPoint for the user operation. If you are using a paymaster, the paymasterAndData field is likely not set. If you aren't using a paymaster, the address of the sender does not have enough gas token. After the user operation is executed, the remainder of the prefund is credited back to the sender.
+
+Q: AA22 Expired or not due
+A: The signature is not valid because it is outside of the specified time range.
+
+Q: AA23 reverted (or OOG)
+A: The sender signature validation was rejected or ran out of gas. "OOG" is an abbreviation for Out-Of-Gas. The verificationGasLimit may be too low.
+
+If you encounter an "AA23 reverted OOG" error, it means the sender does not have sufficient native tokens to cover the User Operation's gas costs. If you intended to use a Paymaster for sponsorship, ensure that the paymasterAndData field of the user operation is correctly set to enable proper handling of gas fees.
+
+Q: AA24 Signature Error
+A: Check the signature field of the user operation. It may be in an incompatible format.
+
+Debugging checklist
+ The user operation hash is correct
+ The user operation data matches the final user operation that is sent to the bundler client
+ The Entry Point address is correct
+ The Chain ID is correct
+ The smart contract of the account expects the same type of signature (e.g., keccak256)
+
+Q: AA25 Invalid account nonce
+A: The nonce is invalid. The user operation may be re-using an old nonce, or formatted the nonce incorrectly.
+
+Q: AA30 Paymaster not deployed
+A: The paymaster address specified by paymasterAndData contains no code. Check that the first characters of the paymasterAndData field are the paymaster address you intend to use.
+
+Q: AA31 Paymaster deposit too low
+A: The paymaster is out of funds. More gas tokens must be deposited into the EntryPoint for the paymaster. This is usually done by calling the paymaster contract's deposit function. If you are using a paymaster service, contact them immediately.
+
+Q: AA32 Paymaster expired or not due
+A: The paymaster's signature is not valid because it is outside of the specified time range.
+
+Q: AA33 reverted (or OOG)
+A: The paymaster validation was rejected or ran out of gas. "OOG" is an abbreviation for Out-Of-Gas. First check the paymaster's signature in paymasterAndData. If the signature is correct, the verificationGasLimit may be too low.
+
+Q: AA34 Signature Error
+A: The paymaster's signature is invalid. Check the format of the signature in paymasterAndData.
+
+Q: AA40 over verificationGasLimit
+A: The verification gas limit was exceeded. Check the verificationGasLimit in your user operation.
+
+Q: AA41 too little verificationGas
+A: Verifying the user operation took too much gas and did not complete. You may need to increase verificationGasLimit.
+
+Q: AA50 PostOp reverted
+A: After the user operation was completed, the execution of additional logic by the EntryPoint reverted.
+
+Q: AA51 prefund below actualGasCost
+A: The actual cost of the user operation is higher than the total amount of gas approved. The prefund is the amount that the EntryPoint is allowed to execute the user operation. After the user operation is executed, the remainder of the prefund is credited back to the sender.
+
+Q: What is the EntryPoint address?
+A: The EntryPoint address is the same on all EVM networks. The v0.6 EntryPoint address is `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`.
+
+Q: What are some smart account contracts that I can use?
+A: Ethereum Foundation
+The Ethereum Foundation's account abstraction team, ETH Infinitism, developed a few reference contracts as part of the development of ERC-4337.
+
+SimpleAccount.sol - an account with one owner that verifies a single ECDSA signature. This is used in Stackup's Quickstart Example.
+BLSAccount.sol - account with one owner that verifies BLS signatures
+Standalone
+ZeroDev Kernel - A modular smart account implementation by ZeroDev. Audited in April 2023.
+Rhinestone - Designed to have a plugin ecosystem and based on the Diamond pattern. In progress.
+Permissive - Framework for managing on-chain authorization compatible with Rhinestone and Gnosis Safe. Early version is live.
+Soul Wallet - Developed for Soul Wallet. In progress, expected Q4 2023.
+Gnosis Safe Based
+Safe (previously Gnosis Safe) is a popular smart contract wallet library that can be modified to be ERC-4337 compliant.
+
+GnosisAccountFactory.sol - A demo ERC-4337 compatible Gnosis Safe by the Ethereum Foundation
+Candide Wallet - A direct Gnosis Safe fork for ERC-4337, plus a social recovery module
+ZeroDev's Gnosis Safe - A direct Gnosis Safe fork for ERC-4337
+
+Q: Where can I learn more about ERC-4337? Where can I join the community? Please provide some helpful links.
+A: ## 📝 Source Material
+
+- [ERC-4337: Account Abstraction Using Alt Mempool](https://eips.ethereum.org/EIPS/eip-4337)
+- [Vitalik's road to account abstraction](https://notes.ethereum.org/@vbuterin/account_abstraction_roadmap)
+- [ERC 4337: account abstraction without Ethereum protocol changes](https://medium.com/infinitism/erc-4337-account-abstraction-without-ethereum-protocol-changes-d75c9d94dc4a)
+
+## 📰 Articles
+
+- [Audit of ERC-4337 by OpenZeppelin](https://blog.openzeppelin.com/eip-4337-ethereum-account-abstraction-incremental-audit/)
+- [You Could Have Invented Account Abstraction by David Philipson of Alchemy](https://www.alchemy.com/blog/account-abstraction)
+- [The History and Future of Account Abstraction by Nethermind](https://medium.com/nethermind-eth/the-history-and-future-of-account-abstraction-10cb097ebdc8)
+- [Corbin Page's list of EIP-4337 resources](https://github.com/PaymagicXYZ/awesome-account-abstraction)
+- [Smart Contract Wallet Overview from 1kx](https://medium.com/1kxnetwork/wallets-91c7c3457578)
+- [WTF is Account Abstraction by Argent](https://www.argent.xyz/blog/wtf-is-account-abstraction/)
+- [The current state of Account Abstraction by Garvit Khatri](https://mirror.xyz/0x6C2265693900a68b9c9CBE2d6Eae3bd9336060db/MIThq8Ford5O3b0hDA4LR_tsRteDfazRfpVQXOR3Euk)
+
+## 🖥️ Implementations
+
+- [Infinitism's 4337 Implementation (core EIP-4337 team)](https://github.com/eth-infinitism/account-abstraction/tree/develop/contracts)
+- [Stackup's 4337 Implementation](https://github.com/stackup-wallet)
+- Biconomy's 4337 Implementation, forked from ETH Infinitism
+- [Soul Wallet's 4337 Implementation, built on top of Gnosis Safe](https://github.com/proofofsoulprotocol/soul-wallet-contract/blob/main/contracts/SmartWallet.sol)
+- [Candide Wallet's 4337 Implementation, built on top of Gnosis Safe](https://github.com/candidelabs/CandideWalletContracts)
+
+## 🎙 Presentations
+
+- [Talk | ERC 4337: Account Abstraction via Alternative Mempool](https://www.youtube.com/watch?v=eyT6WzJmWyc)
+- [Why smart contract wallets are the future with EIP-4337 and Account Abstraction](https://www.youtube.com/watch?v=LdaoBzwHFkU)
+
+## 💬 Communities
+
+- [Stackup Discord](https://discord.gg/VTjJGvMNyW) - managed by Stackup
+- [Infinitism Discord](https://discord.gg/4zeTMfSreu) - managed by core developers of EIP-4337
+
+
+Q: What is `eth_sendUserOperation`?
+eth_sendUserOperation
+Used to submit a UserOperation to the mempool. It returns the userOpHash if the userOp was accepted otherwise returns an error.
+
+# Request
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_sendUserOperation",
+  "params": [
+    // UserOperation object
+    {
+      sender,
+      nonce,
+      initCode,
+      callData,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      paymasterAndData,
+      signature
+    },
+
+    // Supported EntryPoint address
+    entryPoint
+  ]
+}
+```
+
+# Response
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+
+  // UserOpHash
+  "result": "0x..."
+}
+```
+
+Q: What is `eth_estimateUserOperationGas`?
+This method returns estimates for PreVerificationGas, VerificationGas, and CallGasLimit given a UserOperation and EntryPoint address. The signature field and current gas values will not be validated although there should be dummy values in place for the most reliable results (e.g. a signature with the correct length and format).
+
+# Request
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_estimateUserOperationGas",
+  "params": [
+    // UserOperation object
+    {
+      sender,
+      nonce,
+      initCode,
+      callData,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      paymasterAndData,
+      signature
+    },
+
+    // Supported EntryPoint address
+    entryPoint
+  ]
+}
+```
+
+# Response
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+
+  // The return values are the hex strings for wei values.
+  "result": {
+		"PreVerificationGas": "0x..",
+		"VerificationGas":    "0x..",
+		"CallGasLimit":       "0x..",
+	}
+}
+```
+
+Q: What is `eth_getUserOperationByHash`?
+A: Fetches the UserOperation and transaction context based on a given userOpHash returned from eth_sendUserOperation.
+
+# Request
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_getUserOperationByHash",
+  "params": [userOpHash]
+}
+```
+
+# Response
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_getUserOperationByHash",
+  "params": [
+    // UserOperation object
+    {
+      sender,
+      nonce,
+      initCode,
+      callData,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      paymasterAndData,
+      signature
+    },
+
+    // The EntryPoint address
+    entryPoint,
+    // The block number this UserOperation was included in
+    blockNumber,
+    // The block hash this UserOperation was included in
+    blockHash,
+    // The transaction this UserOperation was included in
+    transactionHash,
+  ]
+}
+```
+
+
+Q: What is `eth_getUserOperationReceipt`?
+A: Fetches the UserOperation receipt based on a given userOpHash returned from eth_sendUserOperation.
+
+# Request
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_getUserOperationReceipt",
+  "params": [userOpHash]
+}
+```
+
+# Response
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_getUserOperationReceipt",
+  "params": [
+    // The hash of the UserOperation
+    userOpHash,
+    // The EntryPoint address
+    entryPoint,
+    // The contract account address
+    sender,
+    // nonce of the UserOperation
+    nonce,
+    // The paymaster address
+    paymaster,
+    // The actual amount paid for this UserOperation
+    actualGasCost,
+    // The total gas used by this UserOperation
+    actualGasUsed,
+    // Boolean value indicating if the execution completed without revert
+    success,
+    // If revert occurred, this is the reason
+    reason,
+    // logs generated by this UserOperation only
+    logs,
+    // The TransactionReceipt object for the entire bundle.
+    receipt
+  ]
+}
+```
+
+Q: What is `eth_supportedEntryPoints`?
+A: Returns an array of supported EntryPoint addresses as specified in the configuration. The first element is the bundler's preferred EntryPoint.
+
+# Request
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_supportedEntryPoints",
+  "params": []
+}
+```
+
+# Response
+```
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+
+  // EntryPoint addresses
+  "result": [
+    "0x...",
+    "0x..."
+  ]
+}
+```
+
+Q: Write code for sending a simple ERC-4337 user operation.
+A: Here is an example code snippet in Typescript and using the userop.js library.
+
+```
+import { ethers, Signer, Contract } from "ethers";
+import { Presets, Client } from "userop";
+import dotenv from "dotenv";
+
+dotenv.config();
+const rpcUrl = process.env.RPC_URL || "";
+
+async function sendUserOp(signer: Signer, contract: Contract) {
+
+  // Initialize userop builder
+  var builder = await Presets.Builder.Kernel.init(signer, rpcUrl);
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`);
+
+  const calls = [
+    // First contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+    // Second contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+  ];
+
+  // Build & send
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.executeBatch(calls), {
+    onBuild: (op) => console.log("Signed UserOperation:", op),
+  });
+
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log("Waiting for transaction...");
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+}
+```
+
+Q: Write code that sends a sponsored transaction using a verifying paymaster.
+A:
+
+# Userop.js
+```
+import { ethers, Signer, Contract } from "ethers";
+import { Presets, Client } from "userop";
+import dotenv from "dotenv";
+
+dotenv.config();
+const rpcUrl = process.env.RPC_URL || "";
+const paymasterRpcUrl = process.env.PAYMASTER_RPC_URL || "";
+
+async function sendUserOp(signer: Signer, contract: Contract) {
+  // Initialize the paymaster
+  const paymasterContext = {type: "payg"};
+  const paymaster = Presets.Middleware.verifyingPaymaster(
+    paymasterUrl,
+    paymasterContext
+  );
+  
+  // Initialize userop builder
+  var builder = await Presets.Builder.Kernel.init(
+    signer,
+    rpcUrl,
+    paymasterMiddleware: paymaster
+  );
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`;
+
+  const calls = [
+    // First contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+    // Second contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+  ];
+
+  // Build & send
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.executeBatch(calls), {
+    onBuild: (op) => console.log("Signed UserOperation:", op),
+  });
+
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log("Waiting for transaction...");
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+}
+```
+
+Q: Write code that uses an ERC-20 token paymaster to pay for gas fees.
+A: 
+
+# Userop.js
+```
+import { ethers, Signer, Contract } from "ethers";
+import { Presets, Client } from "userop";
+import dotenv from "dotenv";
+
+dotenv.config();
+const rpcUrl = process.env.RPC_URL || "";
+const paymasterRpcUrl = process.env.PAYMASTER_RPC_URL || "";
+
+async function sendUserOp(signer: Signer, contract: Contract) {
+  // Initialize the paymaster
+  const paymasterContext = {
+  	"type": "erc20token",
+  	"token": "TOKEN_ADDRESS"
+	};
+  const paymaster = Presets.Middleware.verifyingPaymaster(
+    paymasterUrl,
+    paymasterContext
+  );
+  
+  // Initialize userop builder
+  var builder = await Presets.Builder.Kernel.init(
+    signer,
+    rpcUrl,
+    paymasterMiddleware: paymaster
+  );
+  const address = builder.getSender();
+  console.log(`Account address: ${address}`;
+
+  const calls = [
+    // First contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+    // Second contract call
+    {
+      to: "0x...",
+      value: ethers.constants.Zero,
+      data: contract.interface.encodeFunctionData(...);
+    },
+  ];
+
+  // Build & send
+  const client = await Client.init(rpcUrl);
+  const res = await client.sendUserOperation(builder.executeBatch(calls), {
+    onBuild: (op) => console.log("Signed UserOperation:", op),
+  });
+
+  console.log(`UserOpHash: ${res.userOpHash}`);
+  console.log("Waiting for transaction...");
+  const ev = await res.wait();
+  console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+}
+```
+
+Q: How do I send an ERC-20 token using ERC-4337?
+A: To send an ERC-20 token using ERC-4337, you will need to include the ERC-20 transfer calls in your user operation's `callData`. Here's an example of how to do this using ethers.js:
+
+```
+import { ethers } from "ethers";
+import { rpcUrl } from "./config";
+
+async function approveAndSendToken(to: string, token: string, value: string): Promise<any[]> {
+  const ERC20_ABI = require("./erc20Abi.json");
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+  const erc20 = new ethers.Contract(token, ERC20_ABI, provider);
+  const decimals = await Promise.all([erc20.decimals()]);
+  const amount = ethers.utils.parseUnits(value, decimals);
+
+  const approve = {
+    to: token,
+    value: ethers.constants.Zero,
+    data: erc20.interface.encodeFunctionData("approve", [to, amount]),
+  };
+
+  const send = {
+    to: token,
+    value: ethers.constants.Zero,
+    data: erc20.interface.encodeFunctionData("transfer", [to, amount]),
+  };
+
+  return [approve, send];
+}
+```
+
+Q: How do I mint an NFT using ERC-4337?
+A: To mint an NFT using ERC-4337, you will need to include the ERC-4337 mint call in your user operation's `callData`. Here's an example of how to do this using ethers.js:
+
+```
+import { ethers } from "ethers";
+import { rpcUrl } from "./config";
+
+async function mintERC721Token(tokenContractAddress: string, to: string, URI: string): Promise<any[]> {
+  const ERC721_ABI = require("./erc721Abi.json");
+  const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+  const erc721 = new ethers.Contract(tokenContractAddress, ERC721_ABI, provider);
+
+  const mint = {
+    to: tokenContractAddress,
+    value: ethers.constants.Zero,
+    data: erc721.interface.encodeFunctionData("safeMint", [to, URI]),
+  };
+
+  return mint;
+}
+```
+
+Q: How do I send a user operation using Pimlico's paymaster?
+A: In this tutorial, you will generate a user operation, ask Pimlico's verifying paymaster to sponsor it, and then submit the sponsored user operation on-chain with Pimlico's Alto bundler.
+
+Get a Pimlico API key
+To get started, please go to our dashboard and generate a Pimlico API key.
+
+Clone the Pimlico tutorial template repository
+We have created a Pimlico tutorial template repository that you can use to get started. It comes set up with Typescript, ethers v5, and a few other useful packages.
+
+git clone https://github.com/pimlicolabs/tutorial-template.git pimlico-tutorial-1
+cd pimlico-tutorial-1
+
+Now, let's install the dependencies:
+
+npm install
+
+The main file we will be working with is index.ts. Let's run it to make sure everything is working:
+
+npm start
+
+If everything has been set up correctly, you should see Hello world! printed to the console.
+
+Create the viem clients
+We will be using three different clients for this example.
+
+Standard publicClient for normal Ethereum RPC calls — https://rpc.goerli.linea.build
+Pimlico v1 api for the Bundler methods — https://api.pimlico.io/v1/linea-testnet/rpc?apikey=YOUR_PIMLICO_API_KEY
+Pimlico v2 api for the Paymaster methods — https://api.pimlico.io/v2/linea-testnet/rpc?apikey=YOUR_PIMLICO_API_KEY
+Make sure to replace YOUR_PIMLICO_API_KEY in the code below with your actual Pimlico API key.
+
+Let's open up index.ts, and add the following to the bottom:
+
+// CREATE THE CLIENTS
+const publicClient = createPublicClient({
+  transport: http("https://rpc.goerli.linea.build/"),
+  chain: lineaTestnet
+})
+ 
+const chain = "linea-testnet" // find the list of chain names on the Pimlico verifying paymaster reference page
+const apiKey = "YOUR_PIMLICO_API_KEY" // REPLACE THIS
+ 
+const bundlerClient = createClient({
+  transport: http(`https://api.pimlico.io/v1/${chain}/rpc?apikey=${apiKey}`),
+  chain: lineaTestnet
+}).extend(bundlerActions).extend(pimlicoBundlerActions)
+ 
+const paymasterClient = createClient({
+  // ⚠️ using v2 of the API ⚠️ 
+  transport: http(`https://api.pimlico.io/v2/${chain}/rpc?apikey=${apiKey}`),
+  chain: lineaTestnet
+}).extend(pimlicoPaymasterActions)
+
+Generate the initCode
+For the purposes of this guide, we will be using the SimpleAccount.sol wallet found in the eth-infinitism repository. This Wallet is a simple ERC-4337 wallet controlled by a single EOA signer.
+
+At 0x9406Cc6185a346906296840746125a0E44976454, most chain already have deployed a SimpleAccountFactory.sol contract, that is able to easily deploy new SimpleAccount instances via the createAccount function. We will be leveraging this contract to help us generate the initCode.
+
+A user operation consists of 11 fields. Requesting a smart contract deployment is done through the initCode field, where the first 20 bytes specify the factory address the EntryPoint will call, and anything after corresponds to the data that will be called on that factory.
+
+Add the following to the bottom of index.ts:
+
+// GENERATE THE INITCODE
+const SIMPLE_ACCOUNT_FACTORY_ADDRESS = "0x9406Cc6185a346906296840746125a0E44976454"
+ 
+const ownerPrivateKey = generatePrivateKey()
+const owner = privateKeyToAccount(ownerPrivateKey)
+ 
+console.log("Generated wallet with private key:", ownerPrivateKey)
+ 
+const initCode = concat([
+  SIMPLE_ACCOUNT_FACTORY_ADDRESS,
+  encodeFunctionData({
+    abi: [{
+      inputs: [{ name: "owner", type: "address" }, { name: "salt", type: "uint256" }],
+      name: "createAccount",
+      outputs: [{ name: "ret", type: "address" }],
+      stateMutability: "nonpayable",
+      type: "function",
+    }],
+    args: [owner.address, 0n]
+  })
+]);
+ 
+console.log("Generated initCode:", initCode)
+
+Let's run this code with npm start. You should see something like this:
+
+Generated initCode: 0x9406cc6185a346906296840746125a0e449764545fbfb9cf000000000000000000000000508a7005f997a21cd662d6fb41ad69f945c129c10000000000000000000000000000000000000000000000000000000000000000
+
+Calculate the sender address
+Now that we have the initCode, we have to calculate the corresponding sender address, which is the address the SimpleAccount will be deployed to, and thereby the address which will handle the verification and execution steps of the UserOperation.
+
+We do this by calling the getSenderAddress utility function on the EntryPoint. Upon success, it will revert with a special error type that contains the counterfactual address of the smart contract wallet that will be deployed
+
+Add the following to the bottom of index.ts:
+
+// CALCULATE THE SENDER ADDRESS
+const ENTRY_POINT_ADDRESS = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+ 
+const senderAddress = await getSenderAddress(publicClient, {
+  initCode,
+  entryPoint: ENTRY_POINT_ADDRESS
+})
+console.log("Calculated sender address:", senderAddress)
+
+Let's run this code with npm start. You should see something like this:
+
+Calculated sender address: 0xbAd38BdCf884ED92ab370f69C0CD0B7b8a1459A1
+
+Generate the callData
+Now, let's decide on the callData that we want the wallet to actually execute once the UserOperation passes verification.
+
+Add the following to the bottom of index.ts:
+
+// GENERATE THE CALLDATA
+const to = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" // vitalik
+const value = 0n
+const data = "0x68656c6c6f" // "hello" encoded to utf-8 bytes
+ 
+const callData = encodeFunctionData({
+  abi: [{
+		inputs: [
+      { name: "dest", type: "address" },
+      { name: "value", type: "uint256" },
+      { name: "func", type: "bytes" },
+		],
+		name: "execute",
+		outputs: [],
+		stateMutability: "nonpayable",
+		type: "function",
+	}],
+  args: [to, value, data]
+})
+ 
+console.log("Generated callData:", callData)
+
+Above, we are leveraging the execute function of the SimpleWallet, which simply calls an arbitrary address, with arbitrary value and arbitrary callData.
+
+Let's run this code with npm start. You should see something like this:
+
+Generated callData: 0xb61d27f6000000000000000000000000d8da6bf26964af9d7eed9e03e53415d37aa9604500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000
+
+Fill out remaining UserOperation values
+We're almost there, now let's fill out the rest of the UserOperation values.
+
+Add the following to the bottom of index.ts:
+
+// FILL OUT REMAINING USER OPERATION VALUES
+const gasPrice = await bundlerClient.getUserOperationGasPrice()
+ 
+const userOperation = {
+    sender: senderAddress,
+    nonce: 0n,
+    initCode,
+    callData,
+    maxFeePerGas: gasPrice.fast.maxFeePerGas,
+    maxPriorityFeePerGas: gasPrice.fast.maxPriorityFeePerGas,
+    // dummy signature, needs to be there so the SimpleAccount doesn't immediately revert because of invalid signature length
+    signature: "0xa15569dd8f8324dbeabf8073fdec36d4b754f53ce5901e283c6de79af177dc94557fa3c9922cd7af2a96ca94402d35c39f266925ee6407aeb32b31d76978d4ba1c" as Hex
+}
+
+Request Pimlico verifying paymaster sponsorship
+To make the operation gasless, we will leverage Pimlico's verifying paymaster. Using paymasters allows you to delegate the gas fee payment to a third-party contract that can decide whether it is willing to pay the gas fees for the user operation. In this case, Pimlico's verifying paymaster checks whether its off-chain signer has signed off on the user operation. To request Pimlico's signer to sign your user operation, call the pm_sponsorUserOperation endpoint or use the sponsorUserOperation method from the permissionless.js Pimlico paymaster actions.
+
+Add the following to the bottom of index.ts:
+
+// REQUEST PIMLICO VERIFYING PAYMASTER SPONSORSHIP
+const sponsorUserOperationResult = await paymasterClient.sponsorUserOperation({
+  userOperation,
+  entryPoint: ENTRY_POINT_ADDRESS
+})
+ 
+const sponsoredUserOperation: UserOperation = {
+  ...userOperation,
+  preVerificationGas: sponsorUserOperationResult.preVerificationGas,
+  verificationGasLimit: sponsorUserOperationResult.verificationGasLimit,
+  callGasLimit: sponsorUserOperationResult.callGasLimit,
+  paymasterAndData: sponsorUserOperationResult.paymasterAndData
+}
+ 
+console.log("Received paymaster sponsor result:", sponsorUserOperationResult)
+
+Let's run this code with npm start. You should see something like this:
+
+Received paymaster sponsor result: {
+  paymasterAndData: '0xcF60744ef322396a6d0a5B7d396F5814176855F1000000000000000000000000000000000000000000000000000000006518a0c100000000000000000000000000000000000000000000000000000000000000003251910f0e14691ca19a8e2cca216ce77a1ce8d002e975e113cfbc36d8e489a550dbb24ff485ee61c1b91cf8e20261d307ef79f22cf9359fba3271f721dade4d1b',
+  preVerificationGas: 247487n,
+  verificationGasLimit: 526114n,
+  callGasLimit: 75900n
+}
+
+Great! Now we have received the gas limit estimates and added the paymasterAndData field containing Pimlico's signature to our UserOperation.
+
+Sign the UserOperation
+The last field to fill out is the signature. This is a simple ECDSA signature consistent with typical Ethereum private key signing procedures.
+
+Add the following to the bottom of index.ts:
+
+// SIGN THE USER OPERATION
+const signature = await signUserOperationHashWithECDSA({
+  account: owner,
+  userOperation: sponsoredUserOperation,
+  chainId: lineaTestnet.id,
+  entryPoint: ENTRY_POINT_ADDRESS
+})
+sponsoredUserOperation.signature = signature
+ 
+console.log("Generated signature:", signature)
+
+Let's run this code with npm start. You should see something like this:
+
+Generated signature: 0xcaae357fcd3882f1ea4b48f7dcce9d7f2482794ab72d1075ce5d7fcef4c5ec03265fe03e5fd7f8af65a4cd05b7e01300f3938f7e245dc8038748ddef93d5f4061c
+
+Submit the UserOperation to be bundled
+Finally, we're ready to submit the UserOperation to Pimlico's bundler, which will include it on-chain. The eth_sendUserOperation RPC call or the sendUserOperation method from permissionless.js will submit the UserOperation to the bundler.
+
+You can also query for receipts to keep checking the status of the UserOperation until it is included.
+
+Add the following to the bottom of index.ts:
+
+// SUBMIT THE USER OPERATION TO BE BUNDLED
+const userOperationHash = await bundlerClient.sendUserOperation({
+  userOperation: sponsoredUserOperation,
+  entryPoint: ENTRY_POINT_ADDRESS
+})
+ 
+console.log("Received User Operation hash:", userOperationHash)
+ 
+// let's also wait for the userOperation to be included, by continually querying for the receipts
+console.log("Querying for receipts...")
+const receipt = await bundlerClient.waitForUserOperationReceipt({ hash: userOperationHash })
+const txHash = receipt.receipt.transactionHash
+ 
+console.log(`UserOperation included: https://goerli.lineascan.build/tx/${txHash}`)
+
+If we run this code with npm start, we will go through the whole flow of executing the User Operation. You should see something like this:
+
+UserOperation included: https://goerli.lineascan.build/tx/0x43bdf7e2dfc19bfb749376b91d872574668365493ea98f9c9a647a17f541fb96
+
+Once the UserOperation is included, you can view the transaction on the Linea Goerli testnet explorer.
+
+That's it! You've successfully generated a UserOperation and submitted it using Pimlico's Alto bundler.
+
+By leveraging Pimlico's paymaster, you were able to make the User Operation completely gasless, and by using Pimlico's Alto bundler, you were able to submit the User Operation to the chain without having to worry about maintaining your own relaying infrastructure.
+
+Congratulations, you are now a pioneer of Account Abstraction! 🎉
+
+Please get in touch if you have any questions or if you'd like to share what you're building!
+
+Q: How do I pay for gas using ERC-20 tokens and Pimlico's paymaster?
+A: Get a Pimlico API key
+The ERC-20 paymaster itself is completely permissionless, there is no requirement to use an API key for it. We are using an API key in this tutorial to get access to the bundler and verifying paymaster to make the tutorial flow easier.
+
+To get started, please go to our dashboard and generate a Pimlico API key.
+
+Clone the Pimlico tutorial template repository
+We have created a Pimlico tutorial template repository that you can use to get started. It comes set up with Typescript, ethers v5, and a few other useful packages.
+
+git clone https://github.com/pimlicolabs/tutorial-template.git pimlico-tutorial-2
+cd pimlico-tutorial-2
+
+Now, let's install the dependencies:
+
+npm install
+
+The main file we will be working with is index.ts. Let's run it to make sure everything is working:
+
+npm start
+
+If everything has been set up correctly, you should see Hello world! printed to the console.
+
+Define the constants we'll need
+Let's open up index.ts.
+
+First, let's define some of the constants we'll need to use to make the flow work.
+
+Before going any further, let's replace privateKey with a new private key. You can generate this with the box below, or by calling generatePrivateKey().
+
+Do not use this private key in production.
+
+Generate random private key
+Private key:
+0xfbcbe96999daa51e69f8ffca02d3fa1db23ef410d2d4f1d8215fe65394ac4d12
+Address:
+0x941973591b4702f7bCA953D577Db990fDfE74E51
+Remember to replace the apiKey variable with your own Pimlico API key. This will allow you to use our bundler to submit your User Operation.
+
+After replacing these two variables, add the following to the bottom of index.ts:
+
+// DEFINE THE CONSTANTS
+const privateKey = "GENERATED_PRIVATE_KEY" // replace this with a private key you generate!
+const apiKey = "YOUR_PIMICO_API_KEY" // replace with your Pimlico API key
+ 
+const ENTRY_POINT_ADDRESS = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+const SIMPLE_ACCOUNT_FACTORY_ADDRESS = "0x9406Cc6185a346906296840746125a0E44976454"
+ 
+const chain = "mumbai"
+ 
+if (apiKey === undefined) {
+    throw new Error("Please replace the `apiKey` env variable with your Pimlico API key")
+}
+ 
+if (privateKey.match(/GENERATED_PRIVATE_KEY/)) {
+    throw new Error(
+        "Please replace the `privateKey` variable with a newly generated private key. You can use `generatePrivateKey()` for this"
+    )
+}
+ 
+const signer = privateKeyToAccount(privateKey as Hash)
+ 
+const bundlerClient = createClient({
+    transport: http(`https://api.pimlico.io/v1/${chain}/rpc?apikey=${apiKey}`),
+    chain: polygonMumbai
+})
+    .extend(bundlerActions)
+    .extend(pimlicoBundlerActions)
+ 
+const paymasterClient = createClient({
+    // ⚠️ using v2 of the API ⚠️
+    transport: http(`https://api.pimlico.io/v2/${chain}/rpc?apikey=${apiKey}`),
+    chain: polygonMumbai
+}).extend(pimlicoPaymasterActions)
+ 
+const publicClient = createPublicClient({
+    transport: http("https://mumbai.rpc.thirdweb.com"),
+    chain: polygonMumbai
+})
+
+Calculate the deterministic address of your smart wallet
+Since we will be looking to fund our account with USDC (that we will use to sponsor UserOperations with), we need to know the address where our smart wallet will be deployed.
+
+Add the following to the bottom of index.ts:
+
+// CALCULATE THE DETERMINISTIC SENDER ADDRESS
+const initCode = concat([
+    SIMPLE_ACCOUNT_FACTORY_ADDRESS,
+    encodeFunctionData({
+        abi: [
+            {
+                inputs: [
+                    { name: "owner", type: "address" },
+                    { name: "salt", type: "uint256" }
+                ],
+                name: "createAccount",
+                outputs: [{ name: "ret", type: "address" }],
+                stateMutability: "nonpayable",
+                type: "function"
+            }
+        ],
+        args: [signer.address, 0n]
+    })
+])
+ 
+const senderAddress = await getSenderAddress(publicClient, {
+    initCode,
+    entryPoint: ENTRY_POINT_ADDRESS
+})
+console.log("Counterfactual sender address:", senderAddress)
+
+Let's run this code with npm start. You should see something like this:
+
+Counterfactual sender address: 0xbAd38BdCf884ED92ab370f69C0CD0B7b8a1459A1
+
+Get Testnet USDC on Mumbai
+Let's get some USDC on the Mumbai testnet to the counterfactual address of the wallet we will be deploying. This will be used to pay for the gas fees of the User Operations we will be submitting.
+
+The recommended way to do this is to use the USDC faucet, select POLYGON and enter the counterfactual sender address you generated in the previous step.
+
+Alternatively, if the above step does not work, you can get some testnet MATIC. Then, if you're using Metamask, switch your chain to Mumbai and then visit this page to swap some of the testnet MATIC to testnet USDC on Uniswap and then send that USDC to the counterfactual sender address.
+
+Deploy a SimpleWallet
+In our first tutorial we went through an example flow where we deployed a SimpleWallet using Pimlico's verifying paymaster and bundler. We will do something similar in this guide, except that we will be mainly looking to leverage the ERC-20 Paymaster.
+
+During deployment, let's send an approval transaction that will approve unlimited USDC tokens to the ERC-20 Paymaster. This saves us an extra step and allows us to already start using the ERC-20 Paymaster starting from the next User Operation.
+
+Add the following to the bottom of index.ts:
+
+// DEPLOY THE SIMPLE WALLET
+const genereteApproveCallData = (erc20TokenAddress: Address, paymasterAddress: Address) => {
+    const approveData = encodeFunctionData({
+        abi: [
+            {
+                inputs: [
+                    { name: "_spender", type: "address" },
+                    { name: "_value", type: "uint256" }
+                ],
+                name: "approve",
+                outputs: [{ name: "", type: "bool" }],
+                payable: false,
+                stateMutability: "nonpayable",
+                type: "function"
+            }
+        ],
+        args: [paymasterAddress, 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffn]
+    })
+ 
+    // GENERATE THE CALLDATA TO APPROVE THE USDC
+    const to = erc20TokenAddress
+    const value = 0n
+    const data = approveData
+ 
+    const callData = encodeFunctionData({
+        abi: [
+            {
+                inputs: [
+                    { name: "dest", type: "address" },
+                    { name: "value", type: "uint256" },
+                    { name: "func", type: "bytes" }
+                ],
+                name: "execute",
+                outputs: [],
+                stateMutability: "nonpayable",
+                type: "function"
+            }
+        ],
+        args: [to, value, data]
+    })
+ 
+    return callData
+}
+ 
+const submitUserOperation = async (userOperation: UserOperation) => {
+    const userOperationHash = await bundlerClient.sendUserOperation({
+        userOperation,
+        entryPoint: ENTRY_POINT_ADDRESS
+    })
+    console.log(`UserOperation submitted. Hash: ${userOperationHash}`)
+ 
+    console.log("Querying for receipts...")
+    const receipt = await bundlerClient.waitForUserOperationReceipt({
+        hash: userOperationHash
+    })
+    console.log(`Receipt found!\nTransaction hash: ${receipt.receipt.transactionHash}`)}
+ 
+// You can get the paymaster addresses from https://docs.pimlico.io/reference/erc20-paymaster/contracts
+const erc20PaymasterAddress = "0x32aCDFeA07a614E52403d2c1feB747aa8079A353"
+const usdcTokenAddress = "0x0FA8781a83E46826621b3BC094Ea2A0212e71B23" // USDC on Polygon Mumbai
+ 
+const senderUsdcBalance = await publicClient.readContract({
+    abi: [
+        {
+            inputs: [{ name: "_owner", type: "address" }],
+            name: "balanceOf",
+            outputs: [{ name: "balance", type: "uint256" }],
+            type: "function",
+            stateMutability: "view"
+        }
+    ],
+    address: usdcTokenAddress,
+    functionName: "balanceOf",
+    args: [senderAddress]
+})
+ 
+if (senderUsdcBalance < 1_000_000n) {
+    throw new Error(
+        `insufficient USDC balance for counterfactual wallet address ${senderAddress}: ${
+            Number(senderUsdcBalance) / 1000000
+        } USDC, required at least 1 USDC`
+    )
+}
+ 
+const approveCallData = genereteApproveCallData(usdcTokenAddress, erc20PaymasterAddress)
+ 
+// FILL OUT THE REMAINING USEROPERATION VALUES
+const gasPriceResult = await bundlerClient.getUserOperationGasPrice()
+ 
+const userOperation: Partial<UserOperation> = {
+    sender: senderAddress,
+    nonce: 0n,
+    initCode,
+    callData: approveCallData,
+    maxFeePerGas: gasPriceResult.fast.maxFeePerGas,
+    maxPriorityFeePerGas: gasPriceResult.fast.maxPriorityFeePerGas,
+    paymasterAndData: "0x",
+    signature:
+        "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c"
+}
+ 
+const nonce = await getAccountNonce(publicClient, {
+    entryPoint: ENTRY_POINT_ADDRESS,
+    address: senderAddress
+})
+ 
+if (nonce === 0n) {
+    // SPONSOR THE USEROPERATION USING THE VERIFYING PAYMASTER
+    const result = await paymasterClient.sponsorUserOperation({
+        userOperation: userOperation as UserOperation,
+        entryPoint: ENTRY_POINT_ADDRESS
+    })
+ 
+    userOperation.preVerificationGas = result.preVerificationGas
+    userOperation.verificationGasLimit = result.verificationGasLimit
+    userOperation.callGasLimit = result.callGasLimit
+    userOperation.paymasterAndData = result.paymasterAndData
+ 
+    // SIGN THE USEROPERATION
+    const signature = await signUserOperationHashWithECDSA({
+        account: signer,
+        userOperation: userOperation as UserOperation,
+        chainId: polygonMumbai.id,
+        entryPoint: ENTRY_POINT_ADDRESS
+    })
+    
+    userOperation.signature = signature
+    await submitUserOperation(userOperation as UserOperation)
+} else {
+    console.log("Deployment UserOperation previously submitted, skipping...")
+}
+
+Let's run this code with npm start. The wallet should get deployed and you should see something like this:
+
+Receipt not found...
+Receipt not found...
+Receipt found!
+Transaction hash: 0x23d480c51578d78a15a1fd3fcc0c0aa1658eb27a9edc36ce442e1b79363a74ba
+
+Now, if you go to the sender variable's address on Mumbai Scan, you should see a contract deployed there!
+
+Send a User Operation, paying only with USDC using the ERC-20 Paymaster
+Now that we have a smart wallet deployed with USDC approved to the ERC-20 Paymaster address, let's submit another User Operation. but paying solely with USDC this time!
+
+For this step, we'll leverage the @pimlico/erc20-paymaster SDK to verify that enough tokens are approved to the paymaster and to generate the paymasterAndData that will ask Pimlico's ERC-20 paymaster to sponsor the User Operation in exchange for USDC.
+
+Add the following to the bottom of index.ts:
+
+// SPONSOR A USER OPERATION WITH THE ERC-20 PAYMASTER
+const genereteDummyCallData = () => {
+    // SEND EMPTY CALL TO VITALIK
+    const to = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" // vitalik
+    const value = 0n
+    const data = "0x"
+ 
+    const callData = encodeFunctionData({
+        abi: [
+            {
+                inputs: [
+                    { name: "dest", type: "address" },
+                    { name: "value", type: "uint256" },
+                    { name: "func", type: "bytes" }
+                ],
+                name: "execute",
+                outputs: [],
+                stateMutability: "nonpayable",
+                type: "function"
+            }
+        ],
+        args: [to, value, data]
+    })
+ 
+    return callData
+}
+ 
+console.log("Sponsoring a user operation with the ERC-20 paymaster...")
+ 
+const newNonce = await getAccountNonce(publicClient, {
+    entryPoint: ENTRY_POINT_ADDRESS,
+    address: senderAddress
+})
+ 
+const sponsoredUserOperation: UserOperation = {
+    sender: senderAddress,
+    nonce: newNonce,
+    initCode: "0x",
+    callData: genereteDummyCallData(),
+    callGasLimit: 100_000n, // hardcode it for now at a high value
+    verificationGasLimit: 500_000n, // hardcode it for now at a high value
+    preVerificationGas: 50_000n, // hardcode it for now at a high value
+    maxFeePerGas: gasPriceResult.fast.maxFeePerGas,
+    maxPriorityFeePerGas: gasPriceResult.fast.maxPriorityFeePerGas,
+    paymasterAndData: erc20PaymasterAddress, // to use the erc20 paymaster, put its address in the paymasterAndData field
+    signature: "0x"
+}
+ 
+// SIGN THE USEROPERATION
+ 
+sponsoredUserOperation.signature = await signUserOperationHashWithECDSA({
+    account: signer,
+    userOperation: sponsoredUserOperation,
+    chainId: polygonMumbai.id,
+    entryPoint: ENTRY_POINT_ADDRESS
+})
+ 
+await submitUserOperation(sponsoredUserOperation)
+
+If we run this code with npm start, a User Operation will be submitted using the ERC-20 Paymaster. Since we approved USDC to the paymaster in the previous step, the paymaster will be able to withdraw the required amount of USDC from your wallet to fund the gas cost. You should see something like this:
+
+Sponsoring a user operation with the ERC-20 paymaster...
+Receipt not found...
+Receipt not found...
+Receipt found!
+Transaction hash: 0x23d480c51578d78a15a1fd3fcc0c0aa1658eb27a9edc36ce442e1b79363a74ba
+
+If you visit the address of the sender account on Mumbai Scan, you should also see that some of your USDC balance has been deducted!
+
+That's it!
+
+Congratulations, you have submitted your first User Operation using Pimlico's ERC-20 Paymaster! From now on, you will no longer need to keep native gas tokens like ETH and MATIC on your wallet to be able to transact. 🎉
+
+Q: How do I use Lit Protocol with ERC-4337?
+A: Lit Protocol is an Authentication solution that lets you create and manage distributed cryptographic key-pairs for condition-based encryption and programmatic signing. A decentralized key management network, Lit can be used in place of centralized key custodians and other key management solutions. For more information on how Lit Protocol works, visit their documentation page.
+
+Stytch will be used to manage the OTP authentication flow.
+
+Install the required packages
+npm install stytch @lit-protocol/pkp-ethers @lit-protocol/lit-auth-client @lit-protocol/auth-helpers @lit-protocol/types @lit-protocol/lit-node-client-nodejs
+
+Make an account with Stytch and get the Project ID and Secret
+You can sign up for a Stytch account here. Once you have an account, you can find your Project ID and Secret in the Stytch Dashboard API Keys page.
+
+
+
+Create a Stytch client with your Project ID and Secret
+const stytchClient = new stytch.Client({
+    project_id: "project-test-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+    secret: "secret-test-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+});
+
+Send an OTP to the user's email, SMS, or Whatsapp
+const stytchResponse = await stytchClient.otps.email.loginOrCreate({
+    email: "<Your Email Address>",
+})
+
+Authenticate the user with the OTP and get a session token
+const authResponse = await stytchClient.otps.authenticate({
+    method_id: stytchResponse.email_id,
+    code: otpResponse.code,
+    session_duration_minutes: 60 * 24 * 7,
+})
+ 
+const sessionStatus = await stytchClient.sessions.authenticate({
+    session_token: authResponse.session_token,
+})
+
+Get a Lit Relay Server API Key
+You can get a Lit Relay Server API Key by filling out the Lit Protocol team's form
+
+Mint a PKPs through Lit Protocol
+const litClient = new LitAuthClient({
+    litRelayConfig: {
+        relayApiKey: '<Your Lit Relay Server API Key from the previous step>',
+    }
+});
+ 
+const session = litClient.initProvider(ProviderType.StytchOtp, {
+    userId: sessionStatus.session.user_id,
+    appId: "project-test-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+})
+ 
+const authMethod = await session.authenticate({ 
+    accessToken: sessionStatus.session_jwt 
+})
+ 
+await session.mintPKPThroughRelayer(authMethod)
+const pkps = await session.fetchPKPsThroughRelayer(authMethod)
+
+Generate the Controller Session Signatures
+const litNodeClient = new LitNodeClientNodeJs({
+    litNetwork: 'serrano',
+    debug: false,
+})
+await litNodeClient.connect();
+ 
+const resourceAbilities = [
+    {
+        resource: new LitActionResource("*"),
+        ability: LitAbility.PKPSigning,
+    },
+];
+ 
+const sessionKeyPair = litNodeClient.getSessionKey();
+ 
+const authNeededCallback = async (params: AuthCallbackParams) => {
+    const response = await litNodeClient.signSessionKey({
+        sessionKey: sessionKeyPair,
+        statement: params.statement,
+        authMethods: [authMethod],
+        pkpPublicKey: pkp[pkp.length - 1].publicKey,
+        expiration: params.expiration,
+        resources: params.resources,
+        chainId: 1,
+    });
+    return response.authSig;
+};
+ 
+const sessionSigs = await litNodeClient.getSessionSigs({
+    chain: "ethereum",
+    expiration: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+    resourceAbilityRequests: resourceAbilities,
+    sessionKey: sessionKeyPair,
+    authNeededCallback	
+}).catch((err) => {
+    console.log("error while attempting to access session signatures: ", err)
+    throw err;
+});
+
+Initialize the PKP Wallet
+We will now generate a wallet that can act a regular Ethers.js wallet, but will use the PKPs minted through Lit Protocol to sign transactions under the hood.
+
+const pkpWallet = new PKPEthersWallet({
+    pkpPubKey: pkp[pkp.length - 1].publicKey,
+    rpc: "<standard RPC URL for the chain you are using>", // e.g. https://rpc.ankr.com/eth_goerli
+    controllerSessionSigs: sessionSigs
+});
+ 
+await pkpWallet.init();
+
+Use the PKP Wallet to sign user operations and send them through Pimlico
+You can now use the pkpWallet as a regular Ethers.js wallet to sign user operations. To submit a user operation to Pimlico, you can follow the steps to sponsor a user operation with Pimlico's verifying paymaster and/or submit a user operation through Pimlico's bundler. If you would like to integrate Lit Protocol with the full flow of generating, signing, and submitting a user operation, you can follow the steps in tutorial 1, replacing the signing step with the PKP wallet and using pkpWallet.address as the owner address of the smart account.
+
+Modified from tutorial 1, an example of how to use the PKP wallet to sign a user operation is shown below:
+
+const signature = await pkpWallet.signMessage(
+	ethers.utils.arrayify(await entryPoint.getUserOpHash(userOperation)),
+)
+ 
+userOperation.signature = signature
+
+And an example of how you would generate the initCode for a SimpleAccount using the PKP wallet is shown below:
+
+const initCode = ethers.utils.hexConcat([
+	SIMPLE_ACCOUNT_FACTORY_ADDRESS,
+	simpleAccountFactory.interface.encodeFunctionData("createAccount", [pkpWallet.address, 0]),
+])
+
+Q: How can I connect to a bundler with userop.js?
+Userop.js is an SDK for building user operations. Here is an example code snippet:
+
+```
+import { Client } from "userop";
+
+const client = await Client.init(rpcUrl, entryPoint);
+```
+
+Q: How can I send a user operation to a bundler using userop.js?
+A: The sendUserOperation method directs a builder instance to create a User Operation and send it to a bundler via `eth_sendUserOperation`.
+```
+import { Client } from "userop";
+
+const response = await client.sendUserOperation(builder);
+const userOperationEvent = await response.wait();
+```
+
+The builder is a `UserOperationBuilder` from userop.js.
+
+Q: How do I use a userop.js builder to create a user operation?
+A: Userop.js uses a builder pattern to create user operations. It can help build a UserOperation that can be passed to the client.
+
+Here is the interface:
+```
+interface IUserOperationBuilder {
+  // get methods.
+  getSender: () => string;
+  getNonce: () => BigNumberish;
+  getInitCode: () => BytesLike;
+  getCallData: () => BytesLike;
+  getCallGasLimit: () => BigNumberish;
+  getVerificationGasLimit: () => BigNumberish;
+  getPreVerificationGas: () => BigNumberish;
+  getMaxFeePerGas: () => BigNumberish;
+  getMaxPriorityFeePerGas: () => BigNumberish;
+  getPaymasterAndData: () => BytesLike;
+  getSignature: () => BytesLike;
+  getOp: () => IUserOperation;
+
+  // set methods.
+  setSender: (address: string) => IUserOperationBuilder;
+  setNonce: (nonce: BigNumberish) => IUserOperationBuilder;
+  setInitCode: (code: BytesLike) => IUserOperationBuilder;
+  setCallData: (data: BytesLike) => IUserOperationBuilder;
+  setCallGasLimit: (gas: BigNumberish) => IUserOperationBuilder;
+  setVerificationGasLimit: (gas: BigNumberish) => IUserOperationBuilder;
+  setPreVerificationGas: (gas: BigNumberish) => IUserOperationBuilder;
+  setMaxFeePerGas: (fee: BigNumberish) => IUserOperationBuilder;
+  setMaxPriorityFeePerGas: (fee: BigNumberish) => IUserOperationBuilder;
+  setPaymasterAndData: (data: BytesLike) => IUserOperationBuilder;
+  setSignature: (bytes: BytesLike) => IUserOperationBuilder;
+  setPartial: (partialOp: Partial<IUserOperation>) => IUserOperationBuilder;
+
+  // Sets the default values that won't be wiped on reset.
+  useDefaults: (partialOp: Partial<IUserOperation>) => IUserOperationBuilder;
+  resetDefaults: () => IUserOperationBuilder;
+
+  // Some fields may require arbitrary logic to build an op.
+  // Middleware functions allow you to set custom logic for building op fragments.
+  useMiddleware: (fn: UserOperationMiddlewareFn) => IUserOperationBuilder;
+  resetMiddleware: () => IUserOperationBuilder;
+
+  // This will construct a UserOperation that can be sent to a client.
+  // It will run through your entire middleware stack in the process.
+  buildOp: (
+    entryPoint: string,
+    chainId: BigNumberish
+  ) => Promise<IUserOperation>;
+
+  // Will reset all fields back to default value.
+  resetOp: () => IUserOperationBuilder;
+}
+```
+
+The builder has `get` and `set` functions.
+These are basic getters and setters for all fields on a UserOperation. Getters return the field type whereas setters will return the instance to enable chaining.
+
+For example:
+
+```
+const builder = new UserOperationBuilder()
+  .setCallData(callData)
+  .setCallGasLimit(callGas);
+```
+
+Q: What are middleware functions in userop.js?
+A: Some fragments on a UserOperation may depend on custom logic in order to be built. For example, based on your Smart Account, there might be a specific ways to sign an operation which aren't specified in the standard.
+
+For such cases we can set custom middleware functions. During buildOp, a middleware will be called in the order they are set. Here is a example of middleware functions you might have in your application:
+
+```
+const resolveAccount => async (ctx) => {
+  // Fetch the latest nonce and initCode if required.
+  ctx.op.nonce = nonce;
+  ctx.op.initCode = initCode;
+};
+
+const fetchGasPrice = async (ctx) => {
+  // Fetch the latest gas prices.
+  ctx.op.maxFeePerGas = maxFeePerGas;
+  ctx.op.maxFeePerGas = maxPriorityFeePerGas;
+};
+
+const verifyingPaymaster = async (ctx) => {
+  // Request gas sponsorship from a paymaster provider.
+  ctx.op.paymasterAndData = paymasterAndData;
+  ctx.op.preVerificationGas = preVerificationGas;
+  ctx.op.verificationGasLimit = verificationGasLimit;
+  ctx.op.callGasLimit = callGasLimit;
+};
+
+const signUserOperation = async (ctx) => {
+  // Use the required signature scheme based on your wallet.
+  // ctx.getRequestId() will generate the required hash for verification.
+  // Multisig, ECDSA, etc.
+  ctx.op.signature = signature;
+};
+
+const builder = new UserOperationBuilder()
+  .useMiddleware(resolveAccount)
+  .useMiddleware(fetchGasPrice)
+  .useMiddleware(verifyingPaymaster)
+  .useMiddleware(signUserOperation);
+```
+
+Q: How can I build a user operation using a userop.js bundler client?
+A: The buildUserOperation method can be used to direct a bundler to create a user operation using the client's entryPoint and chainID. However it will only return the UserOperation and not initiate a send request.
+```
+const userOp = await client.buildUserOperation(builder);
+```
+Note: This method will also call `resetOp` on a builder if successful.
+
+
+Q: How do I create a simple account with userop.js?
+A: The SimpleAccount preset is an abstraction to build User Operations for an ERC-4337 account based on SimpleAccount.sol.
+
+```
+import { Client, Presets } from "userop";
+
+const simpleAccount = await Presets.Builder.SimpleAccount.init(
+  signer, // Any object compatible with ethers.Signer
+  config.rpcUrl
+);
+const client = await Client.init(config.rpcUrl);
+
+const res = await client.sendUserOperation(
+  simpleAccount.execute(target, value, "0x"),
+  { onBuild: (op) => console.log("Signed UserOperation:", op) }
+);
+console.log(`UserOpHash: ${res.userOpHash}`);
+
+console.log("Waiting for transaction...");
+const ev = await res.wait();
+console.log(`Transaction hash: ${ev?.transactionHash ?? null}`);
+```
+
+Q: How do I estimate user operation gas?
+A: All bundler clients include a method for estimating a user operation's preVerificationGas, verificationGasLimit, and callGasLimit, eth_estimateUserOperationGas.
+
+In userop.js, this can be done with the estimateUserOperationGas middleware.
+
+```
+import { Presets } from "userop";
+
+// provider is an ethers.js JSON-RPC provider.
+builder = builder.useMiddleware(Presets.Middleware.estimateUserOperationGas(provider))
+```
+
+The maxFeePerGas and maxPriorityFeePerGas can be found using the `getGasPrice` preset in userop.js:
+
+```
+import { Presets } from "userop";
+
+// provider is an ethers.js JSON-RPC provider.
+builder = builder.useMiddleware(Presets.Middleware.getGasPrice(provider))
+```
+
+Q: Why do I get a custom JS tracing error?
+A: You are likely routing ERC-4337 requests to an RPC provider that does not allow custom javascript tracing, which is required for a bundler to interact with the blockchain.
+
+Q: How can I connect to a bundler with permissionless.js?
+A: Permissionless.js is an SDK for building user operations. Here is an example code snippet:
+
+```
+import { createClient, http } from 'viem'
+import { goerli } from 'viem/chains'
+import { bundlerActions } from 'permissionless'
+ 
+const bundlerClient = createClient({ 
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v1/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+}).extend(bundlerActions)
+```
+
+Alternatively, you can initialize a Bundler Client with the createBundlerClient method:
+```
+import { http } from 'viem'
+import { goerli } from 'viem/chains'
+import { createBundlerClient } from 'permissionless'
+ 
+const bundlerClient = createBundlerClient({
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v1/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+})
+```
+
+Q: How do I use a Pimlico bundler with permissionless.js?
+A: Initialize a Bundler Client with your desired Chain (e.g. mainnet) and Transport (e.g. http) from viem by creating a simple client and extending it with the Pimlico bundler methods and (optionally) the standard bundler methods.
+
+```
+import { createClient, http } from 'viem'
+import { goerli } from 'viem/chains'
+import { bundlerActions } from 'permissionless'
+import { pimlicoBundlerActions } from 'permissionless/actions/pimlico'
+ 
+const pimlicoBundlerClient = createClient({ 
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v1/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+})
+.extend(bundlerActions)
+.extend(pimlicoBundlerActions)
+```
+
+Then you can consume Pimlico Bundler Actions:
+```
+const userOperationGasPrice = await pimlicoBundlerClient.getUserOperationGasPrice()
+```
+Alternatively, you can initialize a Bundler Client with the createPimlicoBundlerClient method:
+```
+import { http } from 'viem'
+import { goerli } from 'viem/chains'
+import { createPimlicoBundlerClient } from "permissionless/clients/pimlico";
+ 
+const pimlicoBundlerClient = createPimlicoBundlerClient({
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v1/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+})
+```
+
+Q: How do I use a Pimlico paymater with permissionless.js?
+A: Initialize a Bundler Client with your desired Chain (e.g. mainnet) and Transport (e.g. http) from viem by creating a simple client and extending it with the Pimlico paymaster methods.
+```
+import { createClient, http } from 'viem'
+import { goerli } from 'viem/chains'
+import { bundlerActions } from 'permissionless'
+import { pimlicoPaymasterActions } from 'permissionless/actions/pimlico'
+ 
+const bundlerClient = createClient({ 
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v2/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+})
+.extend(pimlicoPaymasterActions)
+
+Then you can consume Pimlico Paymaster Actions:
+
+const sponsorResult = await bundlerClient.sponsorUserOperation({
+    userOperation: {
+        sender: "...",
+        nonce: 3n,
+        initCode: "0x",
+        callData: "...",
+        maxFeePerGas: 113000000n,
+        maxPriorityFeePerGas: 113000100n,
+        signature: "..."
+    },
+    entryPoint: "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+})
+
+Alternatively, you can initialize a Paymaster Client with the createPimlicoPaymasterClient method:
+
+import { http } from 'viem'
+import { goerli } from 'viem/chains'
+import { createPimlicoPaymasterClient } from "permissionless/clients/pimlico";
+ 
+const pimlicoPaymasterClient = createPimlicoPaymasterClient({
+  chain: goerli,
+  transport: http("https://api.pimlico.io/v1/goerli/rpc?apikey=YOUR_API_KEY_HERE")
+})
+```
+
+
+Q: How can I bundler a user operation using Pimlico?
+A:
+```
+import { ethers } from "ethers"
+ 
+const pimlicoApiKey = "YOUR_PIMLICO_API_KEY_HERE"
+const chain = "sepolia" // find the list of supported chains at https://docs.pimlico.io/reference/bundler
+const pimlicoEndpoint = `https://api.pimlico.io/v1/${chain}/rpc?apikey=${pimlicoApiKey}`
+ 
+const userOperation = ...
+const entryPoint = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+ 
+const pimlicoProvider = new ethers.providers.StaticJsonRpcProvider(pimlicoEndpoint)
+ 
+const userOperationHash = await pimlicoProvider.send(
+    "eth_sendUserOperation", 
+    [userOperation, entryPoint]
+)
+```
+
+Q: How can I estimate gas fees using Pimlico?
+A: 
+```
+import { ethers } from "ethers"
+ 
+const pimlicoApiKey = "YOUR_PIMLICO_API_KEY_HERE"
+const chain = "sepolia" // find the list of supported chains at https://docs.pimlico.io/reference/bundler
+const pimlicoEndpoint = `https://api.pimlico.io/v1/${chain}/rpc?apikey=${pimlicoApiKey}`
+ 
+const userOperation = ...
+const entryPoint = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+ 
+const pimlicoProvider = new ethers.providers.StaticJsonRpcProvider(pimlicoEndpoint)
+ 
+const estimationResult = await pimlicoProvider.send(
+    "eth_estimateUserOperationGas", 
+    [userOperation, entryPoint]
+) 
+ 
+const preVerificationGas = estimationResult.preVerificationGas
+const verificationGasLimit = estimationResult.verificationGasLimit
+const callGasLimit = estimationResult.callGasLimit
+```
+
+Q: Where can I get more information about account abstraction?
+A: # Standard
+
+- [EIP-4337: Account Abstraction using alt mempool](https://eips.ethereum.org/EIPS/eip-4337) - Standard.
+
+# Articles
+
+### Introduction to Accounts
+
+- [Ethereum Accounts](https://ethereum.org/en/developers/docs/accounts/)
+
+### Introduction to Account Abstraction (AA)
+
+- [EIP 4337 website from Infinitism](https://www.erc4337.io/)
+- [The History and Future of Account Abstraction by Nethermind](https://medium.com/nethermind-eth/the-history-and-future-of-account-abstraction-10cb097ebdc8)
+- [Account Abstraction 101: a Comprehensive Guide by Braavos](https://braavos.app/account-abstraction-ethereum-comprehensive-guide/)
+- [Primer on AA by Argent](https://www.argent.xyz/blog/wtf-is-account-abstraction/)
+- [Managing Complexity Via AA – A Simplified Future by Etherspot](https://etherspot.io/blog/account-abstraction-a-simplified-future/)
+- [Account Abstraction for Everyone Else by cami](https://camiinthisthang.substack.com/p/account-abstraction-for-everyone)
+- [Understanding Account Abstraction by Alchemy](https://www.alchemy.com/learn/account-abstraction)
+
+### Ethereum Improvement Proposals (EIPs)
+
+- [EIP-4337: Account Abstraction via Entry Point Contract specification](https://eips.ethereum.org/EIPS/eip-4337)
+- [EIP-5003: Insert Code into EOAs with AUTHUSURP](https://eips.ethereum.org/EIPS/eip-5003)
+- [EIP-5792: Wallet Function Call API](https://eips.ethereum.org/EIPS/eip-5792)
+- [EIP-6492: Signature Validation for Predeploy Contracts](https://eips.ethereum.org/EIPS/eip-6492)
+- [EIP-6900: Modular Smart Contract Accounts and Plugins](https://eips.ethereum.org/EIPS/eip-6900)
+
+
+### EIP Articles & Discussions
+
+- [Account Abstraction EIP:2938 by Status](https://our.status.im/account-abstraction-eip-2938/)
+- [ERC 4337: account abstraction without Ethereum protocol changes by Vitalik](https://medium.com/infinitism/erc-4337-account-abstraction-without-ethereum-protocol-changes-d75c9d94dc4a)
+- [We should be moving beyond EOAs, not enshrining them even further (EIP 3074-related)](https://ethereum-magicians.org/t/we-should-be-moving-beyond-eoas-not-enshrining-them-even-further-eip-3074-related/6538)
+- [What is ERC-6492 and why it’s important for Account Abstraction](https://docs.zerodev.app/blog/erc-6492-and-why-its-important-for-aa)
+
+### Current Landscape / Thoughts / Threads
+
+- [A brief note on the future of accounts](https://ethresear.ch/t/a-brief-note-on-the-future-of-accounts/12395)
+- [AA as Ethereum’s broadband moment, by @loaf](https://mirror.xyz/proofedloaf.eth/uJYBCOXoq0YfhKh0HrfwbA4yNV-jbvoeFiOnXDhs2Gc)
+- [Account Abstraction is NOT coming](https://safe.mirror.xyz/9KmZjEbFkmI79s28d9xar6JWYrE50F5AHpa5CR12YGI)
+- [ERC-4337 — Misconceptions and Valid Concerns](https://docs.zerodev.app/blog/erc-4337-misconceptions-and-valid-concerns)
+- [Limitations of AA by Pete J Kim P1](https://twitter.com/petejkim/status/1529604590882234368)
+- [Limitations of AA by Pete J Kim P2](https://twitter.com/petejkim/status/1527027583254241280)
+- [Random thoughts on Account Abstraction](https://hackmd.io/@s0lness/BJUb16Yo9)
+- [The current state of Account Abstraction](https://mirror.xyz/plusminushalf.eth/MIThq8Ford5O3b0hDA4LR_tsRteDfazRfpVQXOR3Euk)
+- [Starkware Discussion on AA P1](https://community.starknet.io/t/starknet-account-abstraction-model-part-1/781)
+- [Starkware Discussion on AA P2](https://community.starknet.io/t/starknet-account-abstraction-model-part-2/839)
+- [Why we need wide adoption of social recovery wallets](https://vitalik.ca/general/2021/01/11/recovery.html)
+- [Seedless Self-Custody: On MPC and Smart Contract Wallets](https://medium.com/1kxnetwork/wallets-91c7c3457578)
+- [Using EIP-2535 Diamonds to implement the smart contract wallet for EIP-4337](https://ethereum-magicians.org/t/erc-4337-account-abstraction-via-entry-point-contract-specification/7160/53)
+- [Unpacking ERC-4337](https://frontier.tech/unpacking-erc-4337)
+- [Unified ERC 4337 Mempool](https://notes.ethereum.org/@yoav/unified-erc-4337-mempool)
+
+### Applications
+
+- [How to Make On-Chain Gaming Competitive: ‘Session Keys’ [Part 1]](https://mirror.xyz/matchboxdao.eth/VXOvLKIvfXHP-cusKHw55zqlHpvvWwzh_fqm6j48Yek)
+- [What Can You Do with Account Abstraction?](https://docs.zerodev.app/blog/what-can-you-do-with-account-abstraction)
+- [Session Keys are the JWTs of Web3](https://docs.zerodev.app/blog/session-keys-are-the-jwts-of-web3)
+- [Combining Token Bound Accounts with Account Abstraction](https://www.openfort.xyz/blog/technical-dive-combining-token-bound-account-tba-with-account-abstraction-aa)
+
+### Twitter Threads
+
+- [zkSync2.0 x Account Abstraction](https://twitter.com/zksync/status/1584924198907977728) by @zksync
+- [🧵Thread: The inevitable adoption of account abstraction ](https://twitter.com/Crypto__Jesus_/status/1606307436406636547) by @Crypto\__Jesus_
+- [why hasn't crypto taken off?](https://twitter.com/divine_economy/status/1605230807299543041) by @divine_economy
+- [The concept and dynamics of Abstraction Account(AA) development](https://twitter.com/0xYolo/status/1584447321147789317) by @0xYolo
+- [EIP-4337 Account Abstraction](https://twitter.com/_nishil_/status/1579550419944058880) by @_nishil_
+- [How to try to scam your scammer](https://twitter.com/0x_ARK/status/1553395019884535809) by @0x_ARK
+- [What exactly is AA, and what’s the use case there? A thread for beginners into AA 🧵](https://twitter.com/Mulan0x/status/1583813663986577408) by @Mulan0x
+- [decentralized fee market](https://twitter.com/VitalikButerin/status/1576199517434949634) by @VitalikButerin
+- [MPC vs smart contract wallets: comparison thread](https://twitter.com/Ivshti/status/1529474442622947328)
+- [4337 Misconceptions](https://twitter.com/johnrising_/status/1619166915624112131) by [@John Rising](https://twitter.com/johnrising_)
+- [Bundler P2P Network](https://twitter.com/ch4r10t33r/status/1658443645215727618) by [@Partha](https://twitter.com/ch4r10t33r)
+
+# Videos
+
+- [ERC 4337: Account Abstraction via Alternative Mempool](https://www.youtube.com/watch?v=eyT6WzJmWyc&ab_channel=ETHGlobal)
+- [Starkware: Account Abstraction Security Pyramid (Braavos)](https://www.youtube.com/watch?v=FrxAdJYhSY8)
+- [Starkware Sessions: Bankless / Motty Lavie on Smart Contract Wallets](https://www.youtube.com/watch?v=9ycBLfqYcO4)
+- [Julien Niset Why account abstraction on L2 is critical for mass adoption](https://www.youtube.com/watch?v=LpDrT3s9PrY&ab_channel=AmphiPontoise)
+- [Why smart contract wallets are the future with EIP-4337 and Account Abstraction -@kristofgazso](https://www.youtube.com/watch?v=LdaoBzwHFkU&ab_channel=ETHDubai)
+- [StarkNetCC panel on AA with Argent, Braavos, Ledger, briq and Realms](https://www.youtube.com/watch?v=sbbVCAB--i4&t=20741s)
+- [Starkware: Account Abstraction (Argent X)](https://www.slideshare.net/TinaBregovi/starkware-account-abstraction?next_slideshow=251274463)
+- [What is Account Abstraction?](https://www.youtube.com/watch?v=wnh8Ea6aYM8&)
+- [What is EIP-4337?](https://www.youtube.com/watch?v=Nsqyt7YYvgg)
+- [ERC-4337 Account Abstraction presentation by Trail of Bits](https://www.youtube.com/watch?v=edPJaUYWlhY)
+- [Full Course on Account Abstraction & ERC-4337 Architecture includes bonus podcast with CEO of StackUp](https://youtu.be/1pE261Tbjcc)
+
+#### Devcon Bogotá
+
+- [Why Account Abstraction is a Game-Changer for Dapps | Devcon Bogotá](https://youtu.be/OwppworJGzs)
+- [Account Abstraction Panel | Devcon Bogotá](https://youtu.be/WsZBymiyT-8)
+
+# Code
+
+### SDK & Libaries
+
+- [0xpass/0xpass](https://github.com/0xpass/0xpass)
+- [Braavos/efficient-secp256r1](https://github.com/myBraavos/efficient-secp256r1)
+- [rdubois-crypto/FreshCryptoLib](https://github.com/rdubois-crypto/FreshCryptoLib)  
+- [argentlabs/argent-x](https://github.com/argentlabs/argent-x)
+- [bcnmy/biconomy-client-sdk](https://github.com/bcnmy/biconomy-client-sdk)
+- [cupcakes-3/sdk](https://github.com/cupcakes-3/sdk)
+- [eth-infinitism/bundler](https://github.com/eth-infinitism/bundler)
+- [openfort-xyz/openfort-node](https://github.com/openfort-xyz/openfort-node)
+- [porco-rosso-j/zksync-aa-wallet-paymaster](https://github.com/porco-rosso-j/zksync-aa-wallet-paymaster)
+- [zerodevapp/sdk](https://github.com/zerodevapp/sdk)
+- [etherspot-sdk](https://github.com/etherspot/etherspot-sdk)
+- [web3well/easy-web3](https://github.com/web3well/easy-web3)
+- [safe-global/safe-core-sdk](https://github.com/safe-global/safe-core-sdk)
+
+### Smart Contracts (EVM)
+
+- [Ambire Wallet](https://github.com/AmbireTech/wallet/tree/development/contracts)
+- [Biconomy](https://github.com/bcnmy/scw-contracts)
+- [BLS Wallet](https://github.com/web3well/bls-wallet/tree/main/contracts)
+- [Candide Wallet](https://github.com/candidelabs/CandideWalletContracts)
+- [Etherspot](https://github.com/etherspot/etherspot-contracts/)
+- [Forum Wallet](https://github.com/forumdaos/forum-contracts)
+- [Infinitism](https://github.com/eth-infinitism/account-abstraction)
+- [Kriptonio](https://kriptonio.com)
+- [Openfort](https://github.com/openfort-xyz/openfort-contracts)
+- [Safe](https://github.com/safe-global/safe-contracts/)
+- [Stackup](https://github.com/stackup-wallet/stackup)
+- [Soul Wallet](https://github.com/proofofsoulprotocol/soul-wallet-contract)
+- [TrueWallet](https://github.com/TrueWallet/contracts)
+- [Patch Wallet](https://github.com/PaymagicXYZ/patch-base-account-contracts)
+- [ZeroDev](https://github.com/zerodevapp/zerodev-wallet-kernel)
+
+### Bundlers
+
+
+- [Golang Implementation](https://github.com/stackup-wallet/stackup-bundler) by Stackup
+- [Voltaire - Python Implementation](https://github.com/candidelabs/voltaire) by Candide
+- [Alto - Typescript Implementation](https://github.com/pimlicolabs/alto) by Pimlico
+- [Silius - Rust Implementation](https://github.com/Vid201/silius/) - [blog](https://hackmd.io/@Vid201/aa-bundler-rust)
+- [TypeScript Implementation](https://github.com/eth-infinitism/bundler) by Infinitism
+- [Skandha - Typescript Implementation](https://github.com/etherspot/skandha) by Etherspot
+
+### Paymasters
+
+- [Python Implementation](https://github.com/candidelabs/Candide-Paymaster-RPC) by Candide
+- [Paymaster contracts](https://github.com/pimlicolabs/erc20-paymaster-contracts) by Pimlico
+
+### Starknet
+
+- [Guildly: An implementation for having guilds for on-chain games on Starknet.](https://github.com/Guildly/contracts)
+- [Braavos account contracts including multisig and Hardware Signer](https://github.com/myBraavos/braavos-account-cairo)
+- [Argent account contracts on Starknet](https://github.com/argentlabs/argent-contracts-starknet)
+- [Multisig wallet on StarkNet](https://github.com/eqlabs/starknet-multisig/)
+- [Another Multisig wallet on StarkNet](https://github.com/sambarnes/cairo-multisig)
+
+### Audits
+
+- [EIP-4337 – Ethereum Account Abstraction Audit - Part 1](https://blog.openzeppelin.com/eth-foundation-account-abstraction-audit/)
+- [EIP-4337 – Ethereum Account Abstraction Audit - Part 2](https://blog.openzeppelin.com/eip-4337-ethereum-account-abstraction-incremental-audit/)
+
+### RPC Providers
+
+- [Account Abstraction RPC Providers](https://github.com/arddluma/awesome-list-rpc-nodes-providers#account-abstraction-rpc-providers)
+
+### L2 Integration API
+
+- [Integration API for EIP-4337 bundler with an L2 validator/sequencer](https://notes.ethereum.org/@yoav/SkaX2lS9j)
+
+### Indexer
+
+- [UoIndexer](https://github.com/zsluedem/UoIndexer)
+
+# Projects
+
+Projects using Account Abstraction (or variations of AA) in alphabetical order.
+
+- [0xPass](https://0xpass.io/)
+- [Ambire](https://www.ambire.com)
+- [Argent](https://www.argent.xyz/)
+- [Braavos](https://braavos.app/)
+- [Biconomy](https://www.biconomy.io/)
+- [BLS Wallet](https://blswallet.org/)
+- [Candide](https://www.candidewallet.com/)
+- [Etherspot](https://etherspot.io)
+- [Fluvi](https://fluvi.io/)
+- [Forum Wallet](https://forumdaos.com/)
+- [Obvious](https://obvious.technology/)
+- [Kriptonio](https://kriptonio.com)
+- [Openfort](https://openfort.xyz)
+- [Patch Wallet](https://app.patchwallet.com/)
+- [Peaze](https://www.peaze.com/)
+- [Pimlico](https://www.pimlico.io)
+- [rhinestone](https://rhinestone.wtf)
+- [Safe](https://safe.global/)
+- [Solon Network](https://www.solon.network/)
+- [Soul Wallet](https://twitter.com/soulwallet_eth)
+- [Stackup](https://stackup.sh/)
+- [Squence](https://sequence.app/)
+- [TrueWallet](https://true-wallet.io/)
+- [Unipass](https://www.unipass.id/)
+- [ZeroDev](http://zerodev.app/)
+- [zkSync](https://zksync.io/)
+
+### Explorers
+
+- [Jiffyscan](https://app.jiffyscan.xyz/?selectedNetwork=mainnet)
+- [AAScan](https://aascan.org)
+
+### Dune dashboards
+
+- [erc-4337](https://dune.com/johnrising/erc-4337) by John (johnrising)
+- [account-abstraction](https://dune.com/niftytable/account-abstraction) by Kofi (niftytable)
+- [erc4337-mainnet](https://dune.com/suneal_eth/erc4337-mainnet) by Suneal (suneal_eth)
+
+# Communities
+
+### Telegram
+
+- 4337 mafia (product and application)
+- 4337 fan club (EIP, research, security)
+
+### Twitter
+
+- [Official Twitter account for ERC-4337 Account Abstraction](https://twitter.com/erc4337)
+- [4337Mafia](https://twitter.com/4337Mafia)
+
+### Discord
+
+- [Infinitism](https://discord.gg/59T8mSxwb3)
+- [Web3Well (blswallet integrations)](https://discord.com/invite/hGDmAhcRyz)
+
+### Newsletters
+
+- [Everything About Account Abstraction](https://medium.com/etherspot/search?q=Everything+About+Account) by Etherspot
+
+### Research and technical forums
+
+- [Fellowship of Ethereum Magicians](https://ethereum-magicians.org/t/erc-4337-account-abstraction-via-entry-point-contract-specification/7160)
+- [Ethereum StackExchange (#smart-contract-wallets)](https://ethereum.stackexchange.com/questions/tagged/smart-contract-wallets)
+
+# Archived Articles
+
+- [Meta Transactions x Account Abstraction](https://hackmd.io/@matt/S1Jg85588)
+- [DoS Vectors in Account Abstraction (AA) or Validation Generalization, a Case Study in Geth](https://ethresear.ch/t/dos-vectors-in-account-abstraction-aa-or-validation-generalization-a-case-study-in-geth/7937)
+
+Q: Do we need to signup for zerodev separately to use zerodev's kernel with stackup?
+A: No you do not need to sign up for ZeroDev or pay them anything to use their smart contracts. Their smart contracts are permissionless.
+
+Q: Do we need to pay separately for sponsored transactions if we integrate zerodev's kernel through stackup?
+A: You don't need to pay separately for sponsored transactions with Kernel, the Ethereum Foundation's simpleAccount, Rhinestone, or any other smart account implementation. You can also mix and match. For example, you can use Stackup's paymaster with another bundler service, Stackup's bundler service with your own paymaster, or even use userop.js with a different provider's bundler and paymaster.
+
